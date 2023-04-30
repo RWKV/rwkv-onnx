@@ -23,7 +23,7 @@ def RnnRWKV(ops, *args):
             self.ln2b = (ops.stack(
                 [w[f"blocks.{x}.ln2.bias"] for x in range(ops.n_layers)]))
             self.time_decay = (ops.stack([
-                w[f"blocks.{x}.att.time_decay"] for x in range(ops.n_layers)]))
+                w[f"blocks.{x}.att.time_decay"].double().exp().neg() for x in range(ops.n_layers)]))
             self.time_first = (ops.stack([
                 w[f"blocks.{x}.att.time_first"] for x in range(ops.n_layers)]))
             self.kktk = (ops.stack(
