@@ -9,7 +9,7 @@ def initONNXFile(path, useAllAvailableProviders=False):
     if(not useAllAvailableProviders):
         import inquirer
     providers = inquirer.checkbox(
-        "Select execution providers", choices=rt.get_available_providers()) if not useAllAvailableProviders else rt.get_available_providers()
+        "Select execution providers(use space bar to select checkboxes)", choices=rt.get_available_providers()) if not useAllAvailableProviders else rt.get_available_providers()
     print(providers)
 
     sess = rt.InferenceSession(
@@ -91,8 +91,12 @@ def npsample(ozut, temp: float = 1.0, top_p_usual: float = 0.8) -> int:
     mout = np.random.choice(a=len(probs), p=probs)
     return mout
 
-
-model, state = initONNXFile("RWKV_12_768_16.onnx") 
+import inquirer
+# get all .onnx files in current directory
+import os
+files = [f for f in os.listdir('.') if os.path.isfile(f)]
+files = [f for f in files if f.endswith(".onnx")]
+model, state = initONNXFile(inquirer.list_input("Select model", choices=files)) 
 
 from transformers import GPT2Tokenizer
 tokenizer:GPT2Tokenizer = GPT2Tokenizer.from_pretrained("EleutherAI/gpt-neox-20b")

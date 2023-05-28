@@ -205,6 +205,7 @@ class RWKVOnnxOps():
         self.subtract = sub
 
         self.one = initTensor([1.0]*embed)
+        self.margins = initTensor([0.00001]*embed)
 
         def lerpx(x, y, z):
             return self.add(x, self.multiply(self.subtract(y, x), z))
@@ -274,7 +275,7 @@ class RWKVOnnxOps():
 
         def layernorm(x, w, b):
             xee2 = self.subtract(x,self.mean(x))
-            x2 = self.sqrt(self.mean(self.multiply(xee2,xee2)))
+            x2 = self.add(self.sqrt(self.add(self.mean(self.multiply(xee2,xee2)), self.margins)), self.margins)
             return self.add(self.multiply(w, self.divide(xee2, x2)), b)
 
 
