@@ -3,7 +3,7 @@ import numpy as np
 
 class RWKVOnnxOps():
 
-    def __init__(self, layers, embed, *args, dtype=None, **kwargs):
+    def __init__(self, layers, embed, opsVersion = 15, *args, dtype=None, **kwargs):
         import onnx
         self.n_layers = layers
         self.n_embed = embed
@@ -259,7 +259,7 @@ class RWKVOnnxOps():
 
         self.divide = divide
 
-        def layernorm(x, w, b):
+        def layernorm17(x, w, b):
             name = f"layernorm_{self.nm}_out"
             self.nm += 1
             node = onnx.helper.make_node(
@@ -269,9 +269,16 @@ class RWKVOnnxOps():
             )
             self.NodeList.append(node)
 
-            return name
+            return name 
+        # ort 15 does not support layernorm
 
-        self.layernorm = layernorm
+        def layernorm(x, w, b):
+            xee2 = self.subtract(x,self.mean(x))
+            x2 = self.sqrt(self.mean(self.multiply(xee2,xee2)))
+            return self.add(self.multiply(w, self.divide(xee2, x2)), b)
+
+
+        self.layernorm = layernorm if opsVersion < 17 else layernorm17
 
         def getIndex(x, y):
             name = f"getIndex_{self.nm}_out"
@@ -382,7 +389,7 @@ class RWKVOnnxOps():
 
             )
 
-            modelDef.opset_import[0].version = 17
+            modelDef.opset_import[0].version = opsVersion
 
             onnx.save(modelDef, exportname)
 

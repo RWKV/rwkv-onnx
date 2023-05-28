@@ -1,5 +1,5 @@
 
-def initONNXFile(path, useAllAvailableProviders=True):
+def initONNXFile(path, useAllAvailableProviders=False):
     import onnxruntime as rt
 
     # session execution provider options
@@ -92,10 +92,10 @@ def npsample(ozut, temp: float = 1.0, top_p_usual: float = 0.8) -> int:
     return mout
 
 
-model, state = initONNXFile("RWKV_24_2048_16.onnx") 
+model, state = initONNXFile("RWKV_12_768_16.onnx") 
 
-from transformers import GPTNeoXTokenizerFast
-tokenizer:GPTNeoXTokenizerFast = GPTNeoXTokenizerFast.from_pretrained("EleutherAI/gpt-neox-20b")
+from transformers import GPT2Tokenizer
+tokenizer:GPT2Tokenizer = GPT2Tokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
 
 prompt = tokenizer.encode("User: What is the purpose of a 3.5 inch finglslop with an attached turboencorboratator? Bot:")
 
@@ -107,5 +107,5 @@ print("Loaded prompt.")
 for i in range(100):
     logits, state = model.forward(prompt[-1],state)
     prompt = prompt+[npsample(logits)]
-
+    print(tokenizer.decode(prompt[-1]),end="", flush=True)
 print(tokenizer.decode(prompt))

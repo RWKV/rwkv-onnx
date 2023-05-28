@@ -142,7 +142,7 @@ def convert_model(path, dtype):
         list(filter(lambda x: "blocks" in x and "ln1.bias" in x, w.keys())))
 
 
-    ops = opslist.RWKVOnnxOps(layers,dims,dtype=dtype)
+    ops = opslist.RWKVOnnxOps(layers,dims,dtype=dtype, opsVersion=version.get())
 
     RnnRWKV(ops,w)
 
@@ -169,6 +169,8 @@ def convert():
 # Define the variables
 input_path = tk.StringVar()
 use_fp16 = tk.BooleanVar(value=True)
+# version, number either 15/17
+version = tk.IntVar(value=15)
 
 # Create the widgets
 input_label = tk.Label(root, text="Input Path:")
@@ -176,7 +178,10 @@ input_entry = tk.Entry(root, textvariable=input_path)
 input_button = tk.Button(root, text="Browse...", command=choose_input_file)
 
 
+
 check_button = tk.Checkbutton(root, text="Use fp16", variable=use_fp16)
+input_select = tk.OptionMenu(root, version, 15, 17)
+
 
 convert_button = tk.Button(root, text="Convert", command=convert)
 
@@ -186,8 +191,10 @@ input_entry.grid(row=0, column=1)
 input_button.grid(row=0, column=2)
 
 check_button.grid(row=2, column=0)
+input_select.grid(row=2, column=1)
 
 convert_button.grid(row=3, column=1)
+
 
 # Start the main event loop
 root.mainloop()
