@@ -1,5 +1,6 @@
 
-def RnnRWKV(ops, *args):
+import opslist
+def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
     class myRWKV(ops.module):
 
         @ ops.initfunc
@@ -50,21 +51,8 @@ def RnnRWKV(ops, *args):
                 w[f"blocks.{x}.ffn.receptance.weight"] for x in range(ops.n_layers)]))
             self.value_ffn = (ops.stack([
                 w[f"blocks.{x}.ffn.value.weight"] for x in range(ops.n_layers)]))
-
-        @ops.layerdef
-        def doLayer(self, x, statea, stateb, statec, stated, statee, xx):
-
-            xy = ops.layernorm(x, self.ln1w[xx], self.ln1b[xx])
-
-            k = ops.matvec(
-                self.key[xx], ops.lerp(statea, xy, self.kktk[xx]))
-
-            v = ops.matvec(self.value[xx], ops.lerp(
-                statea, xy, self.vvtv[xx]))
-            rr = ops.matvec(
-                self.receptance[xx], ops.lerp(statea, xy, self.rrtr[xx]))
-            r = ops.logistical((rr))
-
+            
+        def wkvsafe(self, k,v, xx, statee, stateb, statec):
             ww = ops.add(k, self.time_first[xx])
             p = ops.maximum(statee, ww)
 
@@ -82,6 +70,53 @@ def RnnRWKV(ops, *args):
             outc = ops.add(ops.multiply(e1, statec), e2)
             eee = p
             wkv = ops.divide(a, b)
+
+            return wkv, outb, outc, eee
+        
+        def wkvunsafe(self, k,v, xx, statee, stateb, statec):
+            # // const double vv = v[i + token * emb];
+            #     // const double wr1 = aa + exp(float(u[i + emb * offset] + w[i + emb * offset] + k[i + token * emb])) * vv;
+            #     // const double wr2 = bb + exp(float(u[i + emb * offset] + w[i + emb * offset] + k[i + token * emb]));
+            #     // y[i + token * emb] = (wr1) / (wr2+0.001);
+            #     // y[i + token * emb] = (1.0 / (1.0 + exp(float(-r[i + token * emb])))) * y[i + token * emb];
+            #     // aa = (aa + exp(float(double(k[i + token * emb]))) * vv) * exp(float(w[i + emb * offset]));
+            #     // bb = (bb + exp(float(double(k[i + token * emb])))) * exp(float(w[i + emb * offset]));
+                
+            
+            
+            kn = ops.add(self.time_decay[xx], k)
+            kna = ops.exp(ops.add(kn, self.time_first[xx]))
+            knb = ops.exp(kn)
+            a = ops.add(stateb, ops.multiply(kna,v))
+            b = ops.add(statec, kna)
+            wkv = ops.divide(a, b)
+
+            outb = ops.add(stateb, ops.multiply(knb,v))
+            outc = ops.add(statec, knb)
+            td = ops.exp(self.time_decay[xx])
+            outb = ops.multiply(td, outb)
+            outc = ops.multiply(td, outc)
+
+            eee = None
+
+            return wkv, outb, outc, eee
+        
+
+        @ops.layerdef
+        def doLayer(self, x, statea, stateb, statec, stated, statee, xx):
+
+            xy = ops.layernorm(x, self.ln1w[xx], self.ln1b[xx])
+
+            k = ops.matvec(
+                self.key[xx], ops.lerp(statea, xy, self.kktk[xx]))
+
+            v = ops.matvec(self.value[xx], ops.lerp(
+                statea, xy, self.vvtv[xx]))
+            rr = ops.matvec(
+                self.receptance[xx], ops.lerp(statea, xy, self.rrtr[xx]))
+            r = ops.logistical((rr))
+
+            wkv, outb, outc, eee = self.wkvsafe(k,v,xx,statee,stateb,statec) if ops.useSafeWKV else self.wkvunsafe(k,v, xx, statee, stateb, statec)
 
             mvv = ops.add(x, ops.matvec(
                 self.outputvv[xx], ops.multiply(r, wkv)))
@@ -109,18 +144,18 @@ def RnnRWKV(ops, *args):
                 ops.getIndex(self.emb, x),
                 self.emb1, self.emb2)
 
-            statea = state[0::5]
-            stateb = state[1::5]
-            statec = state[2::5]
-            stated = state[3::5]
-            statee = state[4::5]
+            statea = state[0::(4+ops.useSafeWKV)]
+            stateb = state[1::(4+ops.useSafeWKV)]
+            statec = state[2::(4+ops.useSafeWKV)]
+            stated = state[3::(4+ops.useSafeWKV)]
+            statee = state[4::5] if ops.useSafeWKV else [None]*ops.n_layers
 
             ot = []
 
             for i in range(ops.n_layers):
                 x, aaa, bbb, ccc, ddd, eee = self.doLayer(
                     x, statea[i], stateb[i], statec[i], stated[i], statee[i], i)
-                ot = ot + [aaa, bbb, ccc, ddd, eee]
+                ot = ot + ([aaa, bbb, ccc, ddd, eee] if ops.useSafeWKV else [aaa, bbb, ccc, ddd])
 
             x = ops.matvec(self.postprocess2, ops.layernorm(x, self.postprocess0,
                                                             self.postprocess1))
@@ -131,7 +166,6 @@ def RnnRWKV(ops, *args):
     ops.postProcessModule(myRWKV(*args))
     
 
-import opslist
 
 import torch
 
@@ -142,7 +176,7 @@ def convert_model(path, dtype):
         list(filter(lambda x: "blocks" in x and "ln1.bias" in x, w.keys())))
 
 
-    ops = opslist.RWKVOnnxOps(layers,dims,dtype=dtype, opsVersion=version.get())
+    ops = opslist.RWKVOnnxOps(layers,dims,dtype=dtype, opsVersion=version.get(), useSafeWKV=use_safe_wkv.get(), externalData=use_external_data.get())
 
     RnnRWKV(ops,w)
 
@@ -169,6 +203,8 @@ def convert():
 # Define the variables
 input_path = tk.StringVar()
 use_fp16 = tk.BooleanVar(value=True)
+use_safe_wkv = tk.BooleanVar(value=True)
+use_external_data = tk.BooleanVar(value=True)
 # version, number either 15/17
 version = tk.IntVar(value=15)
 
@@ -180,6 +216,8 @@ input_button = tk.Button(root, text="Browse...", command=choose_input_file)
 
 
 check_button = tk.Checkbutton(root, text="Use fp16", variable=use_fp16)
+check_button2 = tk.Checkbutton(root, text="Safe Wkv", variable=use_safe_wkv)
+check_button3 = tk.Checkbutton(root, text="External Data", variable=use_external_data)
 input_select = tk.OptionMenu(root, version, 15, 17)
 
 
@@ -191,7 +229,9 @@ input_entry.grid(row=0, column=1)
 input_button.grid(row=0, column=2)
 
 check_button.grid(row=2, column=0)
-input_select.grid(row=2, column=1)
+check_button2.grid(row=2, column=1)
+check_button3.grid(row=2, column=2)
+input_select.grid(row=3, column=0)
 
 convert_button.grid(row=3, column=1)
 

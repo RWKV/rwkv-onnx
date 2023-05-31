@@ -3,7 +3,7 @@ import numpy as np
 
 class RWKVOnnxOps():
 
-    def __init__(self, layers, embed, opsVersion = 15, *args, dtype=None, **kwargs):
+    def __init__(self, layers, embed, opsVersion = 15, useSafeWKV = True, externalData = True, *args, dtype=None, **kwargs):
         import onnx
         self.n_layers = layers
         self.n_embed = embed
@@ -27,6 +27,8 @@ class RWKVOnnxOps():
         self.TensorList = []
         self.NodeList = []
 
+        self.useSafeWKV = useSafeWKV
+
         def initTensor(x):
             name = f"PreTrainedTensor_{self.nm}"
             self.nm += 1
@@ -45,11 +47,12 @@ class RWKVOnnxOps():
 
             )
 
-            onnx.external_data_helper.set_external_data(
-                rrx,
-                location=externalname,
+            if externalData:
+                onnx.external_data_helper.set_external_data(
+                    rrx,
+                    location=externalname,
 
-            )
+                )
 
             self.TensorList.append(rrx)
             return name
@@ -340,7 +343,7 @@ class RWKVOnnxOps():
 
         # convert to float32
         self.emptyState = np.array((([[0.00]*embed, [0.00]*embed, [0.00]*embed, [
-            0.00]*embed]+[[-1e30]*embed]))*layers)
+            0.00]*embed]+[[-1e30]*embed] if useSafeWKV else []))*layers)
         self.emptyState = np.array(self.emptyState, dtype=nptype)
 
         # self.zero = initTensor([0.0]*embed)
@@ -352,7 +355,7 @@ class RWKVOnnxOps():
 
             emptyState = list(map(lambda x: (onnx.helper.make_tensor_value_info("instate"+str(x),
                                                                                 dtype,
-                                                                                [embed]), "instate"+str(x)), range(5*layers)))
+                                                                                [embed]), "instate"+str(x)), range((4+useSafeWKV)*layers)))
             outs = x.forward(
                 inputtensor[1], list(map(lambda x: x[1], emptyState)))
             print(self.TensorList.__len__())

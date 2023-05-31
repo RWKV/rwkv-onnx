@@ -1,3 +1,4 @@
 *.bin
 *.onnx
 pycache
+*.pth

@@ -27,8 +27,8 @@ def initONNXFile(path, useAllAvailableProviders=False):
 
     if typenum == "tensor(float)":
         typenum = np.float32
-    elif typenum == "tensor(float16)":
-        typenum = np.float16
+    # elif typenum == "tensor(float16)":
+    #     typenum = np.float16
 
     class InterOp():
 
@@ -60,7 +60,7 @@ def initONNXFile(path, useAllAvailableProviders=False):
 
     # emptyState = []
     emptyState = np.array((([[0.00]*embed, [0.00]*embed, [0.00]*embed, [
-            0.00]*embed]+[[-1e30]*embed]))*layers, typenum)
+            0.00]*embed]+[[0]*embed]))*layers, typenum)
 
     return model, emptyState
 
