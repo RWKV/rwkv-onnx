@@ -27,8 +27,8 @@ def initONNXFile(path, useAllAvailableProviders=False):
 
     if typenum == "tensor(float)":
         typenum = np.float32
-    # elif typenum == "tensor(float16)":
-    #     typenum = np.float16
+    elif typenum == "tensor(float16)":
+        typenum = np.float16
 
     class InterOp():
 
