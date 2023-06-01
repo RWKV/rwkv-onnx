@@ -83,17 +83,19 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             #     // bb = (bb + exp(float(double(k[i + token * emb])))) * exp(float(w[i + emb * offset]));
                 
             
-            
-            kn = ops.add(self.time_decay[xx], k)
-            kna = ops.exp(ops.add(kn, self.time_first[xx]))
-            knb = ops.exp(kn)
-            a = ops.add(stateb, ops.multiply(kna,v))
-            b = ops.add(statec, kna)
-            wkv = ops.divide(a, b)
-
-            outb = ops.add(stateb, ops.multiply(knb,v))
-            outc = ops.add(statec, knb)
             td = ops.exp(self.time_decay[xx])
+            tf = ops.exp(self.time_first[xx])
+
+            
+            ek = ops.exp(k)
+            ekk = ops.multiply(ek, tf)
+            a = ops.add(stateb, ops.multiply(ekk,v))
+            b = ops.add(statec, ekk)
+            wkv = ops.divide(a, ops.add(b, ops.margins))
+
+            outb = ops.add(stateb, ops.multiply(ek,v))
+            outc = ops.add(statec, ek)
+            
             outb = ops.multiply(td, outb)
             outc = ops.multiply(td, outc)
 

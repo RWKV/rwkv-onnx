@@ -59,8 +59,10 @@ def initONNXFile(path, useAllAvailableProviders=False):
     model = InterOp()
 
     # emptyState = []
-    emptyState = np.array((([[0.00]*embed, [0.00]*embed, [0.00]*embed, [
-            0.00]*embed]+[[0]*embed]))*layers, typenum)
+    isUnsafeWKV = sess.get_inputs().__len__() < 5*layers
+    print(isUnsafeWKV)
+    emptyState = np.array((([[0.01]*embed, [0.01]*embed, [0.01]*embed, [
+            0.01]*embed]+([[-1e30]*embed] if not isUnsafeWKV else [])))*layers, typenum)
 
     return model, emptyState
 
@@ -101,7 +103,7 @@ model, state = initONNXFile(inquirer.list_input("Select model", choices=files))
 from transformers import GPT2Tokenizer
 tokenizer:GPT2Tokenizer = GPT2Tokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
 
-prompt = tokenizer.encode("User: What is the purpose of a 3.5 inch finglslop with an attached turboencorboratator? Bot:")
+prompt = tokenizer.encode("User: Please describe an apple? Bot: Sure! an apple is")
 
 for token in prompt[:-1]:
     logits, state = model.forward(token,state)
