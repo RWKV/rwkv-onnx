@@ -1,4 +1,4 @@
 *.bin
 *.onnx
-pycache
+__pycache__
 *.pth
