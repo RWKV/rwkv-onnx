@@ -150,16 +150,47 @@ class RWKVOnnxOps():
                 dim = self.zeroInt
             name = f"mean_{self.nm}_out"
             self.nm += 1
-            node = onnx.helper.make_node(
-                'ReduceMean',
-                inputs=[x,dim],
-                outputs=[name]
-            )
+            if opsVersion == 18:
+                
+                node = onnx.helper.make_node(
+                    'ReduceMean',
+                    inputs=[x,dim],
+                    outputs=[name]
+                )
+
+            else:
+                node = onnx.helper.make_node(
+                    'ReduceMean',
+                    inputs=[x],
+                    outputs=[name],
+                    axes=dim,
+                    keepdims=1
+
+
+                )
             self.NodeList.append(node)
 
             return name
 
         self.mean = mean
+
+        def meanvarnorm(x, dim=None):
+            if dim == None:
+                dim = self.zeroInt
+            name = f"meanvarnorm_{self.nm}_out"
+            self.nm += 1
+            node = onnx.helper.make_node(
+                'MeanVarianceNormalization',
+                inputs=[x],
+                outputs=[name],
+                axes=dim,
+                keepdims=1
+            )
+            self.NodeList.append(node)
+
+            return name
+        
+        self.meanvarnorm = meanvarnorm
 
         def relu(x):
             name = f"relu_{self.nm}_out"
@@ -289,7 +320,7 @@ class RWKVOnnxOps():
         self.margins = initTensor([0.00001]*embed, True)
         self.margins16 = initTensor([0.00001]*embed)
         self.margins32 = initTensor([0.00001]*(embed//32))
-        
+        self.margins3232 = initTensor([0.00001]*(embed//32),True)
 
         def lerpx(x, y, z):
             return self.add(x, self.multiply(self.subtract(y, x), z))
@@ -366,19 +397,23 @@ class RWKVOnnxOps():
         self.layernorm = layernorm if opsVersion != 17 else layernorm17
 
         def groupnorm(x, w, b):
-            # name = f"groupnorm_{self.nm}_out"
-            # self.nm += 1
-            # node = onnx.helper.make_node(
-            #     'GroupNormalization',
-            #     inputs=[x, w, b],
-            #     outputs=[name],
-            #     num_groups=32
-            # )
-            # self.NodeList.append(node)
             x = self.reshape(x, self.premshape)
             xee2 = self.subtract(x,self.mean(x,self.oneInt))
             x2 = self.add(self.sqrt(self.add(self.mean(self.multiply(xee2,xee2),self.oneInt), self.margins32)), self.margins32)
             return self.add(self.multiply(w, self.divide(xee2, x2)), b)
+        
+        def groupnorm18(x, w, b):
+            name = f"groupnorm_{self.nm}_out"
+            self.nm += 1
+            node = onnx.helper.make_node(
+                'GroupNormalization',
+                inputs=[x, w, b],
+                outputs=[name],
+                num_groups=32
+            )
+            self.NodeList.append(node)
+            return name
+            
 
         
         self.groupnorm = groupnorm
@@ -447,10 +482,10 @@ class RWKVOnnxOps():
         self.vshape = initIntTensor([32, 1, 64])
         self.rshape = initIntTensor([32, 1, 64])
         self.normshape = initIntTensor([32 * 64])
-        self.zeroInt = initIntTensor([0])
-        self.oneInt = initIntTensor([1])
+        self.zeroInt = initIntTensor([0]) if opsVersion == 18 else [0]
+        self.oneInt = initIntTensor([1]) if opsVersion == 18 else [1]
         self.eight = initTensor([8.0])
-        self.premshape = initIntTensor([32, 64])
+        self.premshape = initIntTensor([32,  64])
 
         def maximum(x, y):
             name = f"maximum_{self.nm}_out"

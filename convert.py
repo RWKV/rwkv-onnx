@@ -29,9 +29,9 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             self.lnxb = (ops.stack(
                 [w[f"blocks.{x}.att.ln_x.bias"].reshape(32,-1)  for x in range(ops.n_layers)]))
             self.time_decay = (ops.stack([
-                w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(32,1,64).repeat(1,64,1) for x in range(ops.n_layers)], True))
+                w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(32,64,1).repeat(1,1,64) for x in range(ops.n_layers)], True))
             self.time_first = (ops.stack([
-                w[f"blocks.{x}.att.time_faaaa"].reshape(32,1,64).repeat(1,64,1)  for x in range(ops.n_layers)], True))
+                w[f"blocks.{x}.att.time_faaaa"].reshape(32,64,1).repeat(1,1,64)  for x in range(ops.n_layers)], True))
             self.kktk = (ops.stack(
                 [w[f"blocks.{x}.att.time_mix_k"] for x in range(ops.n_layers)]))
             self.vvtv = (ops.stack(
@@ -229,7 +229,7 @@ use_external_data = tk.BooleanVar(value=True)
 splitExternalData = tk.BooleanVar(value=False)
 fp32inout = tk.BooleanVar(value=False)
 # version, number either 15/17
-version = tk.IntVar(value=18)
+version = tk.IntVar(value=15)
 
 # Create the widgets
 input_label = tk.Label(root, text="Input Path:")

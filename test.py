@@ -12,6 +12,7 @@ def initONNXFile(path, useAllAvailableProviders=False):
         "Select execution providers(use space bar to select checkboxes)", choices=rt.get_available_providers()) if not useAllAvailableProviders else rt.get_available_providers()
     print(providers)
 
+
     sess = rt.InferenceSession(
         path, sess_options, providers=providers)
 
