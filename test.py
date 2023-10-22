@@ -11,6 +11,7 @@ def initONNXFile(path, useAllAvailableProviders=False):
     providers = inquirer.checkbox(
         "Select execution providers(use space bar to select checkboxes)", choices=rt.get_available_providers()) if not useAllAvailableProviders else rt.get_available_providers()
     print(providers)
+    sess_options.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_BASIC
 
     sess = rt.InferenceSession(
         path, sess_options, providers=providers)
@@ -22,7 +23,7 @@ def initONNXFile(path, useAllAvailableProviders=False):
     embed = int(path.split("_")[2].split(".")[0])
     layers = int(path.split("_")[1])
     typenum = sess.get_inputs()[1].type
-    print(typenum)
+    print(typenum, embed, layers)
     import numpy as np
 
     if typenum == "tensor(float)":
@@ -34,7 +35,7 @@ def initONNXFile(path, useAllAvailableProviders=False):
 
         RnnOnly = True
 
-        def forward(selff, xi, statei):
+        def forward(selff, xi, statei, statei2):
             # print(statei[0][23])
             # create inputs
             inputs = ins
@@ -49,22 +50,26 @@ def initONNXFile(path, useAllAvailableProviders=False):
             # create input dict
             inputs[input_names[0]] = np.array([xi], dtype=np.int32)
             for i in range(len(input_names)-1):
-                inputs[input_names[i+1]] = statei[i]
+                # print(input_names[i+1])
+                if "wkv" in input_names[i+1]:
+                    inputs[input_names[i+1]] = statei2[i-48]
+                else:
+                    inputs[input_names[i+1]] = statei[i]
 
             outputs = sess.run(output_names, inputs)
             # print(outputs[1][23])
 
-            return outputs[0], outputs[1:]
+            return outputs[0], outputs[1:49], outputs[49:]
         
     model = InterOp()
 
     # emptyState = []
-    isUnsafeWKV = sess.get_inputs().__len__() < 5*layers
-    print(isUnsafeWKV)
-    emptyState = np.array((([[0.01]*embed, [0.01]*embed, [0.01]*embed, [
-            0.01]*embed]+([[-1e30]*embed] if not isUnsafeWKV else [])))*layers, typenum)
+    emptyState = np.array(([[0.01]*embed, [0.01]*embed])*layers, typenum)
+    emptyState2 = np.array(([[[[0.01]*64]*64]*32])*layers, typenum)
+    print (emptyState.shape)
+    print (emptyState2.shape)
 
-    return model, emptyState
+    return model, emptyState, emptyState2
 
 def npsample(ozut, temp: float = 1.0, top_p_usual: float = 0.8) -> int:
     import numpy as np
@@ -98,20 +103,19 @@ import inquirer
 import os
 files = [f for f in os.listdir('.') if os.path.isfile(f)]
 files = [f for f in files if f.endswith(".onnx")]
-model, state = initONNXFile(inquirer.list_input("Select model", choices=files)) 
+model, state, state2 = initONNXFile(inquirer.list_input("Select model", choices=files)) 
 
-from transformers import GPT2Tokenizer
-tokenizer:GPT2Tokenizer = GPT2Tokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
+from tokenizer import world as tokenizer
 
 prompt = tokenizer.encode("User: Please describe an apple? Bot: Sure! an apple is")
-
-for token in prompt[:-1]:
-    logits, state = model.forward(token,state)
+import tqdm
+for token in tqdm.tqdm(prompt[:-1]):
+    logits, state, state2 = model.forward(token,state, state2)
 
 print("Loaded prompt.")
 
 for i in range(100):
-    logits, state = model.forward(prompt[-1],state)
+    logits, state, state2 = model.forward(prompt[-1],state, state2)
     prompt = prompt+[npsample(logits)]
-    print(tokenizer.decode(prompt[-1]),end="", flush=True)
+    print(tokenizer.decode(prompt[-1:]),end="", flush=True)
 print(tokenizer.decode(prompt))
