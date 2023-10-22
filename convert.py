@@ -31,7 +31,7 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             self.time_decay = (ops.stack([
                 w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(32,64,1).repeat(1,1,64) for x in range(ops.n_layers)], True))
             self.time_first = (ops.stack([
-                w[f"blocks.{x}.att.time_faaaa"].reshape(32,64,1).repeat(1,1,64)  for x in range(ops.n_layers)], True))
+                w[f"blocks.{x}.att.time_faaaa"].reshape(32,64,1).repeat(1,1,64)  for x in range(ops.n_layers)],True))
             self.kktk = (ops.stack(
                 [w[f"blocks.{x}.att.time_mix_k"] for x in range(ops.n_layers)]))
             self.vvtv = (ops.stack(
@@ -112,7 +112,7 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             v = ops.matvec(self.value[xx], ops.lerp(
                 statea, xy, self.vvtv[xx]), True)
             rr = ops.matvec(
-                self.receptance[xx], ops.lerp(statea, xy, self.rrtr[xx]))
+                self.receptance[xx], ops.lerp(statea, xy, self.rrtr[xx]), True)
             
             g = ops.matvec(
                 self.gate[xx], ops.lerp(statea, xy, self.ggtg[xx]))
@@ -122,6 +122,7 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             
 
             wkv, state = self.wkv5(k,v, rr, xx,statec)
+            wkv = self.ops.convertToFloat16(wkv)
             wkv8 = ops.divide(wkv, ops.eight)
         #             x = self.ln_x(x / self.head_size_divisor).view(B, T, C)
         # x = self.output(x * g)
@@ -171,7 +172,7 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             for i in range(ops.n_layers):
                 x, aaa, bbb, ccc = self.doLayer(
                     
-                    x, ops.convertToFloat16(statea[i]), ops.convertToFloat16(stateb[i]),ops.convertToFloat16(statec[i]), i)
+                    x, ops.convertToFloat16(statea[i]), ops.convertToFloat16(stateb[i]),ops.convertToFloat32(statec[i]), i)
                 ot = ot + ([ops.convertToFloat32(aaa),ops.convertToFloat32(bbb)])   
                 ot2 = ot2 + [ops.convertToFloat32(ccc)]
             x = ops.matvec(self.postprocess2, ops.layernorm(x, self.postprocess0,

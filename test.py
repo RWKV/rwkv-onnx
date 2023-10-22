@@ -11,7 +11,7 @@ def initONNXFile(path, useAllAvailableProviders=False):
     providers = inquirer.checkbox(
         "Select execution providers(use space bar to select checkboxes)", choices=rt.get_available_providers()) if not useAllAvailableProviders else rt.get_available_providers()
     print(providers)
-
+    sess_options.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_BASIC
 
     sess = rt.InferenceSession(
         path, sess_options, providers=providers)
