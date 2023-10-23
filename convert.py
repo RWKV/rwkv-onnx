@@ -203,7 +203,7 @@ def convert_model(path, dtype):
         list(filter(lambda x: "blocks" in x and "ln1.bias" in x, w.keys())))
 
 
-    ops = opslist.RWKVOnnxOps(layers,dims,dtype=dtype, opsVersion=version.get(), externalData=use_external_data.get(), splitExternalData=splitExternalData.get(), fp32inout=fp32inout.get())
+    ops = opslist.RWKVOnnxOps(layers,dims,dtype=dtype, opsVersion=version.get(), externalData=use_external_data.get(), splitExternalData=splitExternalData.get(), fp32inout=fp32inout.get(), quantized=mybits.get()==8)
 
     RnnRWKV(ops,w)
 
@@ -224,12 +224,12 @@ def choose_input_file():
 import numpy as np
 def convert():
     path = input_path.get()
-    dtype = np.float16 if use_fp16.get() else np.float32
+    dtype = np.float16 if mybits.get()==16 else np.float32
     convert_model(path, dtype)
 
 # Define the variables
 input_path = tk.StringVar()
-use_fp16 = tk.BooleanVar(value=True)
+mybits = tk.IntVar(value=8)
 use_external_data = tk.BooleanVar(value=True)
 splitExternalData = tk.BooleanVar(value=False)
 fp32inout = tk.BooleanVar(value=False)
@@ -243,7 +243,7 @@ input_button = tk.Button(root, text="Browse...", command=choose_input_file)
 
 
 
-check_button = tk.Checkbutton(root, text="Use fp16", variable=use_fp16)
+bits = tk.OptionMenu(root, mybits, 8, 16, 32)
 check_button3 = tk.Checkbutton(root, text="External Data", variable=use_external_data)
 check_button4 = tk.Checkbutton(root, text="Split External Data", variable=splitExternalData)
 check_button5 = tk.Checkbutton(root, text="Float32 inputs/outputs", variable=fp32inout)
@@ -257,7 +257,7 @@ input_label.grid(row=0, column=0)
 input_entry.grid(row=0, column=1)
 input_button.grid(row=0, column=2)
 
-check_button.grid(row=2, column=0)
+bits.grid(row=2, column=0)
 check_button3.grid(row=2, column=2)
 check_button4.grid(row=2, column=3)
 check_button5.grid(row=2, column=4)

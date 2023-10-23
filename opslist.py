@@ -581,6 +581,21 @@ class RWKVOnnxOps():
             onnx.checker.check_model(exportname)
             onnx.shape_inference.infer_shapes_path(exportname, check_type=True, strict_mode=True)
 
+            if quantized:
+                import onnx
+                from onnxruntime.quantization import quantize_dynamic, QuantType
+                model_fp32 = exportname
+                model_quant = "quantized_"+exportname
+                try:
+                    quantized_model = quantize_dynamic(model_fp32, model_quant, per_channel=True, reduce_range=True)
+                    import os
+                    os.remove(model_fp32)
+                    os.rename(model_quant, model_fp32)
+                    os.remove(externalname+".bin")
+                except:
+                    print("Quantization failed, chase this line and update the above code to use external data(if you are using a model more than 1b5)")
+                    exit()
+
             # run model
             print("Model saved to: ", exportname, " and is ready to be run")
             print("Data type: ", dtype)
