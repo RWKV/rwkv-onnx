@@ -41,25 +41,25 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             self.ggtg = (ops.stack(
                 [w[f"blocks.{x}.att.time_mix_g"] for x in range(ops.n_layers)]))
             self.key = (ops.stack(
-                [w[f"blocks.{x}.att.key.weight"] for x in range(ops.n_layers)], exname="_key"))
+                [w[f"blocks.{x}.att.key.weight"].t() for x in range(ops.n_layers)], exname="_key"))
             self.value = (ops.stack(
-                [w[f"blocks.{x}.att.value.weight"] for x in range(ops.n_layers)], exname="_value"))
+                [w[f"blocks.{x}.att.value.weight"].t() for x in range(ops.n_layers)], exname="_value"))
             self.receptance = (ops.stack([
-                w[f"blocks.{x}.att.receptance.weight"] for x in range(ops.n_layers)], exname="_receptance"))
+                w[f"blocks.{x}.att.receptance.weight"].t() for x in range(ops.n_layers)], exname="_receptance"))
             self.gate = (ops.stack([
-                w[f"blocks.{x}.att.gate.weight"] for x in range(ops.n_layers)], exname="_gate"))
+                w[f"blocks.{x}.att.gate.weight"].t() for x in range(ops.n_layers)], exname="_gate"))
             self.outputvv = (ops.stack([
-                w[f"blocks.{x}.att.output.weight"] for x in range(ops.n_layers)], exname="_outputvv"))
+                w[f"blocks.{x}.att.output.weight"].t() for x in range(ops.n_layers)], exname="_outputvv"))
             self.time_mix_k_ffn = (ops.stack([
                 w[f"blocks.{x}.ffn.time_mix_k"] for x in range(ops.n_layers)]))
             self.time_mix_r_ffn = (ops.stack([
                 w[f"blocks.{x}.ffn.time_mix_r"] for x in range(ops.n_layers)]))
             self.key_ffn = (ops.stack(
-                [w[f"blocks.{x}.ffn.key.weight"] for x in range(ops.n_layers)], exname="_key_ffn"))
+                [w[f"blocks.{x}.ffn.key.weight"].t() for x in range(ops.n_layers)], exname="_key_ffn"))
             self.receptance_ffn = (ops.stack([
-                w[f"blocks.{x}.ffn.receptance.weight"] for x in range(ops.n_layers)], exname="_receptance_ffn"))
+                w[f"blocks.{x}.ffn.receptance.weight"].t() for x in range(ops.n_layers)], exname="_receptance_ffn"))
             self.value_ffn = (ops.stack([
-                w[f"blocks.{x}.ffn.value.weight"] for x in range(ops.n_layers)], exname="_value_ffn"))
+                w[f"blocks.{x}.ffn.value.weight"].t() for x in range(ops.n_layers)], exname="_value_ffn"))
             del w
         # def torchwise(self, B, T, C, H, s, r, k, v, w, u):
  
@@ -107,15 +107,15 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             xy = ops.layernorm(x, self.ln1w[xx], self.ln1b[xx])
 
             k = ops.matvec(
-                self.key[xx], ops.lerp(statea, xy, self.kktk[xx]), True)
+                 ops.lerp(statea, xy, self.kktk[xx]),self.key[xx], True)
 
-            v = ops.matvec(self.value[xx], ops.lerp(
-                statea, xy, self.vvtv[xx]), True)
-            rr = ops.matvec(
-                self.receptance[xx], ops.lerp(statea, xy, self.rrtr[xx]), True)
+            v = ops.matvec(ops.lerp(
+                statea, xy, self.vvtv[xx]),self.value[xx], True)
+            rr = ops.matvec(ops.lerp(statea, xy, self.rrtr[xx]),
+                self.receptance[xx], True)
             
             g = ops.matvec(
-                self.gate[xx], ops.lerp(statea, xy, self.ggtg[xx]))
+                 ops.lerp(statea, xy, self.ggtg[xx]),self.gate[xx])
             
             gg = ops.silu(g)
 
@@ -130,21 +130,25 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
 
             lnxo = ops.reshape(lnx, self.ops.normshape)
             
-            mvvo = ops.matvec(
-                self.outputvv[xx], ops.multiply(gg, lnxo))
+            mvvo = ops.matvec(ops.multiply(gg, lnxo),
+                self.outputvv[xx])
             
             mvv = ops.add(mvvo, x)
 
             ddd = ops.layernorm(mvv, self.ln2w[xx], self.ln2b[xx])
 
-            km = ops.relu(ops.matvec(self.key_ffn[xx], ops.lerp(
-                stateb, ddd, self.time_mix_k_ffn[xx])))
+            kml = ops.lerp(
+                stateb, ddd, self.time_mix_k_ffn[xx])
 
-            rt = ops.logistical((ops.matvec(self.receptance_ffn[xx], ops.lerp(
-                stateb, ddd, self.time_mix_r_ffn[xx]))))
+            km = ops.relu(ops.matvec(kml, self.key_ffn[xx]))
+
+            krl = ops.lerp(
+                stateb, ddd, self.time_mix_r_ffn[xx])
+
+            rt = ops.logistical((ops.matvec(krl,self.receptance_ffn[xx])))
 
             x = ops.add(mvv, ops.multiply(
-                ops.matvec(self.value_ffn[xx], ops.multiply(km, km)), rt))
+                ops.matvec(ops.multiply(km, km),self.value_ffn[xx] ), rt))
 
             return x, xy, ddd, state
 
@@ -175,7 +179,7 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
                     x, ops.convertToFloat16(statea[i]), ops.convertToFloat16(stateb[i]),ops.convertToFloat32(statec[i]), i)
                 ot = ot + ([ops.convertToFloat32(aaa),ops.convertToFloat32(bbb)])   
                 ot2 = ot2 + [ops.convertToFloat32(ccc)]
-            x = ops.matvec(self.postprocess2, ops.layernorm(x, self.postprocess0,
+            x = ops.matvec(self.postprocess2,ops.layernorm(x, self.postprocess0,
                                                             self.postprocess1))
 
             return ops.convertToFloat32(x), ot, ot2

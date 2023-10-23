@@ -4,6 +4,7 @@ def initONNXFile(path, useAllAvailableProviders=False):
 
     # session execution provider options
     sess_options = rt.SessionOptions()
+    # sess_options.enable_profiling = True
 
     print(rt.get_available_providers())
     if(not useAllAvailableProviders):
@@ -11,7 +12,12 @@ def initONNXFile(path, useAllAvailableProviders=False):
     providers = inquirer.checkbox(
         "Select execution providers(use space bar to select checkboxes)", choices=rt.get_available_providers()) if not useAllAvailableProviders else rt.get_available_providers()
     print(providers)
+    # sess_options.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_BASIC
+    sess_options.intra_op_num_threads = 6
+    sess_options.inter_op_num_threads = 6
+    sess_options.execution_mode = rt.ExecutionMode.ORT_PARALLEL
     sess_options.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_BASIC
+    sess_options.add_session_config_entry("session.intra_op.allow_spinning", "1")
 
     sess = rt.InferenceSession(
         path, sess_options, providers=providers)
@@ -107,7 +113,7 @@ model, state, state2 = initONNXFile(inquirer.list_input("Select model", choices=
 
 from tokenizer import world as tokenizer
 
-prompt = tokenizer.encode("User: Please describe an apple? Bot: Sure! an apple is")
+prompt = tokenizer.encode("### Instruction:\nPlease describe an apple\n###Result:\n")
 import tqdm
 for token in tqdm.tqdm(prompt[:-1]):
     logits, state, state2 = model.forward(token,state, state2)
