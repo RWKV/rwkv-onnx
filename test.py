@@ -113,7 +113,7 @@ model, state, state2 = initONNXFile(inquirer.list_input("Select model", choices=
 
 from tokenizer import world as tokenizer
 
-prompt = tokenizer.encode("### Instruction:\nPlease describe an apple\n###Result:\n")
+prompt = tokenizer.encode("### Instruction:\nPlease participate in the conversation\n###Woman:\nHello! My name is Martha\n###Man\nHi! how are you?")
 import tqdm
 for token in tqdm.tqdm(prompt[:-1]):
     logits, state, state2 = model.forward(token,state, state2)

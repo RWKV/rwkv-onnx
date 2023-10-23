@@ -518,6 +518,7 @@ class RWKVOnnxOps():
         # self.zero = initTensor([0.0]*embed)
 
         def ppm(x):
+            import onnx
             inputtensor = onnx.helper.make_tensor_value_info("input0",
                                                              onnx.TensorProto.INT32,
                                                              [1]), "input0"
@@ -577,6 +578,7 @@ class RWKVOnnxOps():
             print("Nearly save")
 
             onnx.save(modelDef, exportname)
+            del modelDef
 
             onnx.checker.check_model(exportname)
             onnx.shape_inference.infer_shapes_path(exportname, check_type=True, strict_mode=True)
