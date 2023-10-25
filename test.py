@@ -108,7 +108,7 @@ import inquirer
 # get all .onnx files in current directory
 import os
 files = [f for f in os.listdir('.') if os.path.isfile(f)]
-files = [f for f in files if f.endswith(".onnx")]
+files = [f for f in files if f.endswith(".onnx") or f.endswith(".ort")]
 model, state, state2 = initONNXFile(inquirer.list_input("Select model", choices=files)) 
 
 from tokenizer import world as tokenizer
