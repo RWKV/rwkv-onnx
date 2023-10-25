@@ -238,6 +238,8 @@ version = tk.IntVar(value=15)
 
 # Create the widgets
 input_label = tk.Label(root, text="Input Path:")
+opsetlabel = tk.Label(root, text="opset:")
+bitlabel = tk.Label(root, text="bit")
 input_entry = tk.Entry(root, textvariable=input_path)
 input_button = tk.Button(root, text="Browse...", command=choose_input_file)
 
@@ -258,12 +260,14 @@ input_entry.grid(row=0, column=1)
 input_button.grid(row=0, column=2)
 
 bits.grid(row=2, column=0)
+bitlabel.grid(row=2, column=1)
 check_button3.grid(row=2, column=2)
 check_button4.grid(row=2, column=3)
 check_button5.grid(row=2, column=4)
-input_select.grid(row=3, column=0)
+opsetlabel.grid(row=3, column=0)
+input_select.grid(row=3, column=1)
 
-convert_button.grid(row=3, column=1)
+convert_button.grid(row=3, column=2)
 
 
 # Start the main event loop
