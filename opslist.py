@@ -589,7 +589,7 @@ class RWKVOnnxOps():
                 model_fp32 = exportname
                 model_quant = "quantized_"+exportname
                 try:
-                    quantized_model = quantize_dynamic(model_fp32, model_quant, per_channel=True, reduce_range=True)
+                    quantized_model = quantize_dynamic(model_fp32, model_quant, per_channel=True, reduce_range=True, use_external_data_format=True)
                     import os
                     os.remove(model_fp32)
                     os.rename(model_quant, model_fp32)

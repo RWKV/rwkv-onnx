@@ -58,20 +58,21 @@ def initONNXFile(path, useAllAvailableProviders=False):
             for i in range(len(input_names)-1):
                 # print(input_names[i+1])
                 if "wkv" in input_names[i+1]:
-                    inputs[input_names[i+1]] = statei2[i-48]
+                    inputs[input_names[i+1]] = statei2[i-statei.__len__()]
                 else:
+                    # print(i, statei.__len__())
                     inputs[input_names[i+1]] = statei[i]
 
             outputs = sess.run(output_names, inputs)
             # print(outputs[1][23])
 
-            return outputs[0], outputs[1:49], outputs[49:]
+            return outputs[0], outputs[1:statei.__len__()+1], outputs[statei.__len__()+1:]
         
     model = InterOp()
 
     # emptyState = []
     emptyState = np.array(([[0.01]*embed, [0.01]*embed])*layers, typenum)
-    emptyState2 = np.array(([[[[0.01]*64]*64]*32])*layers, typenum)
+    emptyState2 = np.array(([[[[0.01]*64]*64]*40])*layers, typenum)
     print (emptyState.shape)
     print (emptyState2.shape)
 
@@ -113,14 +114,14 @@ model, state, state2 = initONNXFile(inquirer.list_input("Select model", choices=
 
 from tokenizer import world as tokenizer
 
-prompt = tokenizer.encode("### Instruction:\nPlease participate in the conversation\n###Woman:\nHello! My name is Martha\n###Man\nHi! how are you?")
+prompt = tokenizer.encode("### Instruction:\nPlease write a short story of a man defeating a two headed dragon###Result\n")
 import tqdm
 for token in tqdm.tqdm(prompt[:-1]):
     logits, state, state2 = model.forward(token,state, state2)
 
 print("Loaded prompt.")
 
-for i in range(100):
+for i in range(1000):
     logits, state, state2 = model.forward(prompt[-1],state, state2)
     prompt = prompt+[npsample(logits)]
     print(tokenizer.decode(prompt[-1:]),end="", flush=True)

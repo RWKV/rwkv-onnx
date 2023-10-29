@@ -1,1 +1,1 @@
-python3 -m onnxruntime.tools.convert_onnx_models_to_ort ./RWKV_24_2048_32_15_quant.onnx
+python3 -m onnxruntime.tools.convert_onnx_models_to_ort ./RWKV_32_2560_32_15_quant.onnx

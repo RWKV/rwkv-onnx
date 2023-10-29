@@ -10,6 +10,8 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             print("Legacy RWKV")
 
             self.ops = ops
+            self.headsnume, self.headsize = w[f"blocks.0.att.time_decay"].shape
+           
             self.postprocess0 = ops.initTensor((w["ln_out.weight"]))
             self.postprocess1 = ops.initTensor((w["ln_out.bias"]))
             self.postprocess2 = ops.initTensor((w["head.weight"]))
@@ -25,13 +27,13 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             self.ln2b = (ops.stack(
                 [w[f"blocks.{x}.ln2.bias"] for x in range(ops.n_layers)]))
             self.lnxw = (ops.stack(
-                [w[f"blocks.{x}.att.ln_x.weight"].reshape(32,-1) for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.ln_x.weight"].reshape(self.headsnume,-1) for x in range(ops.n_layers)]))
             self.lnxb = (ops.stack(
-                [w[f"blocks.{x}.att.ln_x.bias"].reshape(32,-1)  for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.ln_x.bias"].reshape(self.headsnume,-1)  for x in range(ops.n_layers)]))
             self.time_decay = (ops.stack([
-                w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(32,64,1).repeat(1,1,64) for x in range(ops.n_layers)], True))
+                w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(self.headsnume,-1,1).repeat(1,1,self.headsize) for x in range(ops.n_layers)], True))
             self.time_first = (ops.stack([
-                w[f"blocks.{x}.att.time_faaaa"].reshape(32,64,1).repeat(1,1,64)  for x in range(ops.n_layers)],True))
+                w[f"blocks.{x}.att.time_faaaa"].reshape(self.headsnume,-1,1).repeat(1,1,self.headsize)  for x in range(ops.n_layers)],True))
             self.kktk = (ops.stack(
                 [w[f"blocks.{x}.att.time_mix_k"] for x in range(ops.n_layers)]))
             self.vvtv = (ops.stack(
@@ -199,11 +201,12 @@ def convert_model(path, dtype):
             os.remove(file)
     w = torch.load(path, map_location="cpu")
     dims = len(w["blocks.0.att.key.weight"])
+    headsnume, headsize = w[f"blocks.0.att.time_decay"].shape
     layers = len(
         list(filter(lambda x: "blocks" in x and "ln1.bias" in x, w.keys())))
 
 
-    ops = opslist.RWKVOnnxOps(layers,dims,dtype=dtype, opsVersion=version.get(), externalData=use_external_data.get(), splitExternalData=splitExternalData.get(), fp32inout=fp32inout.get(), quantized=mybits.get()==8)
+    ops = opslist.RWKVOnnxOps(layers,dims,dtype=dtype, opsVersion=version.get(), externalData=use_external_data.get(), splitExternalData=splitExternalData.get(), fp32inout=fp32inout.get(), quantized=mybits.get()==8, heads=headsnume)
 
     RnnRWKV(ops,w)
 
