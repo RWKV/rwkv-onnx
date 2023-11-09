@@ -54,7 +54,7 @@ def initONNXFile(path, useAllAvailableProviders=False):
             # print(output_names)
 
             # create input dict
-            inputs[input_names[0]] = np.array([xi], dtype=np.int32)
+            inputs[input_names[0]] = np.array(xi, dtype=np.int32)
             for i in range(len(input_names)-1):
                 # print(input_names[i+1])
                 if "wkv" in input_names[i+1]:
@@ -71,8 +71,8 @@ def initONNXFile(path, useAllAvailableProviders=False):
     model = InterOp()
 
     # emptyState = []
-    emptyState = np.array(([[0.01]*embed, [0.01]*embed])*layers, typenum)
-    emptyState2 = np.array(([[[[0.01]*64]*64]*40])*layers, typenum)
+    emptyState = np.array(([[[0.01]*embed], [[0.01]*embed]])*layers, typenum)
+    emptyState2 = np.array(([[[[[0.01]*64]*64]*32]])*layers, typenum)
     print (emptyState.shape)
     print (emptyState2.shape)
 
@@ -117,12 +117,12 @@ from tokenizer import world as tokenizer
 prompt = tokenizer.encode("### Instruction:\nPlease write a short story of a man defeating a two headed dragon###Result\n")
 import tqdm
 for token in tqdm.tqdm(prompt[:-1]):
-    logits, state, state2 = model.forward(token,state, state2)
+    logits, state, state2 = model.forward([token],state, state2)
 
 print("Loaded prompt.")
 
 for i in range(1000):
-    logits, state, state2 = model.forward(prompt[-1],state, state2)
-    prompt = prompt+[npsample(logits)]
+    logits, state, state2 = model.forward([prompt[-1]],state, state2)
+    prompt = prompt+[npsample(logits[0])]
     print(tokenizer.decode(prompt[-1:]),end="", flush=True)
 print(tokenizer.decode(prompt))

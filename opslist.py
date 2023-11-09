@@ -37,7 +37,7 @@ class RWKVOnnxOps():
             if isinstance(x, list):
                 xx = np.array(x).astype(npdtype)
             else:
-                xx = x.squeeze().float().cpu().numpy()
+                xx = x.float().cpu().numpy()
                 # convert to float32
                 xx = xx.astype(npdtype)
             rrx = onnx.helper.make_tensor(
@@ -428,7 +428,7 @@ class RWKVOnnxOps():
             )
             self.NodeList.append(node)
 
-            return squeeze(name)
+            return name
 
         self.stackEmbed = False
 
@@ -478,14 +478,16 @@ class RWKVOnnxOps():
         
         self.reshape = reshape
 
-        self.kshape = initIntTensor([heads, embed//heads, 1])
-        self.vshape = initIntTensor([heads, 1, embed//heads])
-        self.rshape = initIntTensor([heads, 1, embed//heads])
-        self.normshape = initIntTensor([heads * embed//heads])
-        self.zeroInt = initIntTensor([0]) if opsVersion == 18 else [0]
-        self.oneInt = initIntTensor([1]) if opsVersion == 18 else [1]
-        self.eight = initTensor([8.0])
-        self.premshape = initIntTensor([heads,  embed//heads])
+        self.kshape = initIntTensor([-1, embed//heads, 1])
+        self.vshape = initIntTensor([-1, 1, embed//heads])
+        self.rshape = initIntTensor([-1, 1, embed//heads])
+        self.postwkvop = initIntTensor([-1, heads, embed//heads, embed//heads])
+        self.prematshape = initIntTensor([-1, embed//heads, embed//heads])
+        self.normshape = initIntTensor([-1, heads * embed//heads])
+        self.zeroInt = initIntTensor([1]) if opsVersion == 18 else [1]
+        self.oneInt = initIntTensor([2]) if opsVersion == 18 else [2]
+        self.eight = initTensor([[8.0]])
+        self.premshape = initIntTensor([-1, heads,  embed//heads])
 
         def maximum(x, y):
             name = f"maximum_{self.nm}_out"
@@ -504,12 +506,12 @@ class RWKVOnnxOps():
         self.getIndex = getIndex
 
         # convert to float32
-        self.emptyState = np.array((([[0.00]*embed, [0.00]*embed]))*layers)
+        self.emptyState = np.array((([[[0.00]*embed]*3, [[0.00]*embed]*3]))*layers)
         self.emptyState = np.array(self.emptyState)
 
         # emptwkv state is n_layers,32,64,64
         hs = embed//heads
-        self.emptyWkvState = np.array(([[[[0.0]*hs]*hs]*heads]*layers))
+        self.emptyWkvState = np.array(([3*[[[[0.0]*hs]*hs]*heads]]*layers))
 
         if dtype == onnx.TensorProto.FLOAT16 and not fp32inout:
             self.emptyState = self.emptyState.astype(np.float16)
@@ -521,14 +523,14 @@ class RWKVOnnxOps():
             import onnx
             inputtensor = onnx.helper.make_tensor_value_info("input0",
                                                              onnx.TensorProto.INT32,
-                                                             [1]), "input0"
+                                                             [-1]), "input0"
 
             emptyState = list(map(lambda x: (onnx.helper.make_tensor_value_info("instate"+str(x),
                                                                                 onnx.TensorProto.FLOAT if fp32inout else dtype,
-                                                                                [embed]), "instate"+str(x)), range((2)*layers)))
+                                                                                [-1,embed]), "instate"+str(x)), range((2)*layers)))
             emptystate2 = list(map(lambda x: (onnx.helper.make_tensor_value_info("instatewkv"+str(x),
                                                                                     onnx.TensorProto.FLOAT if fp32inout else dtype,
-                                                                                    [heads, hs, hs]), "instatewkv"+str(x)), range(layers)))
+                                                                                    [-1,heads, hs, hs]), "instatewkv"+str(x)), range(layers)))
             outs = x.forward(
                 inputtensor[1], list(map(lambda x: x[1], emptyState)), list(map(lambda x: x[1], emptystate2)))
             print(self.TensorList.__len__())
@@ -536,13 +538,13 @@ class RWKVOnnxOps():
             print(outs)
             logits = onnx.helper.make_tensor_value_info(outs[0],
                                                         onnx.TensorProto.FLOAT if fp32inout else dtype,
-                                                        [65536])
+                                                        [-1,65536])
             state = list(map(lambda x: onnx.helper.make_tensor_value_info(x,
                                                                           onnx.TensorProto.FLOAT if fp32inout else dtype,
-                                                                          [embed]), outs[1]))
+                                                                          [-1, embed]), outs[1]))
             state2 = list(map(lambda x: onnx.helper.make_tensor_value_info(x,
                                                                             onnx.TensorProto.FLOAT if fp32inout else dtype,
-                                                                            [heads, hs, hs]), outs[2]))
+                                                                            [-1, heads, hs, hs]), outs[2]))
 
             # Create the graph (GraphProto)
             graph_def = onnx.helper.make_graph(
@@ -581,7 +583,7 @@ class RWKVOnnxOps():
             del modelDef
 
             onnx.checker.check_model(exportname)
-            onnx.shape_inference.infer_shapes_path(exportname, check_type=True, strict_mode=True)
+            onnx.shape_inference.infer_shapes_path(exportname, check_type=True, strict_mode=True, data_prop=True)
 
             if quantized:
                 import onnx

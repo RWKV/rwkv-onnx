@@ -12,36 +12,36 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             self.ops = ops
             self.headsnume, self.headsize = w[f"blocks.0.att.time_decay"].shape
            
-            self.postprocess0 = ops.initTensor((w["ln_out.weight"]))
-            self.postprocess1 = ops.initTensor((w["ln_out.bias"]))
+            self.postprocess0 = ops.initTensor((w["ln_out.weight"].reshape(1,-1)))
+            self.postprocess1 = ops.initTensor((w["ln_out.bias"].reshape(1,-1)))
             self.postprocess2 = ops.initTensor((w["head.weight"]))
             self.emb = ops.initTensor(w["emb.weight"])
-            self.emb1 = ops.initTensor(w["blocks.0.ln0.weight"])
-            self.emb2 = ops.initTensor(w["blocks.0.ln0.bias"])
+            self.emb1 = ops.initTensor(w["blocks.0.ln0.weight"].reshape(1,-1))
+            self.emb2 = ops.initTensor(w["blocks.0.ln0.bias"].reshape(1,-1))
             self.ln1w = (ops.stack(
-                [w[f"blocks.{x}.ln1.weight"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.ln1.weight"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.ln1b = (ops.stack(
-                [w[f"blocks.{x}.ln1.bias"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.ln1.bias"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.ln2w = (ops.stack(
-                [w[f"blocks.{x}.ln2.weight"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.ln2.weight"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.ln2b = (ops.stack(
-                [w[f"blocks.{x}.ln2.bias"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.ln2.bias"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.lnxw = (ops.stack(
-                [w[f"blocks.{x}.att.ln_x.weight"].reshape(self.headsnume,-1) for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.ln_x.weight"].reshape(1,self.headsnume,-1) for x in range(ops.n_layers)]))
             self.lnxb = (ops.stack(
-                [w[f"blocks.{x}.att.ln_x.bias"].reshape(self.headsnume,-1)  for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.ln_x.bias"].reshape(1,self.headsnume,-1)  for x in range(ops.n_layers)]))
             self.time_decay = (ops.stack([
-                w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(self.headsnume,-1,1).repeat(1,1,self.headsize) for x in range(ops.n_layers)], True))
+                w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(1,self.headsnume,-1,1).repeat(1,1,1,self.headsize) for x in range(ops.n_layers)], True))
             self.time_first = (ops.stack([
-                w[f"blocks.{x}.att.time_faaaa"].reshape(self.headsnume,-1,1).repeat(1,1,self.headsize)  for x in range(ops.n_layers)],True))
+                w[f"blocks.{x}.att.time_faaaa"].reshape(self.headsnume,-1,1).repeat(1,1,1,self.headsize)  for x in range(ops.n_layers)],True))
             self.kktk = (ops.stack(
-                [w[f"blocks.{x}.att.time_mix_k"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.time_mix_k"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.vvtv = (ops.stack(
-                [w[f"blocks.{x}.att.time_mix_v"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.time_mix_v"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.rrtr = (ops.stack(
-                [w[f"blocks.{x}.att.time_mix_r"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.time_mix_r"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.ggtg = (ops.stack(
-                [w[f"blocks.{x}.att.time_mix_g"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.time_mix_g"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.key = (ops.stack(
                 [w[f"blocks.{x}.att.key.weight"].t() for x in range(ops.n_layers)], exname="_key"))
             self.value = (ops.stack(
@@ -53,9 +53,9 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             self.outputvv = (ops.stack([
                 w[f"blocks.{x}.att.output.weight"].t() for x in range(ops.n_layers)], exname="_outputvv"))
             self.time_mix_k_ffn = (ops.stack([
-                w[f"blocks.{x}.ffn.time_mix_k"] for x in range(ops.n_layers)]))
+                w[f"blocks.{x}.ffn.time_mix_k"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.time_mix_r_ffn = (ops.stack([
-                w[f"blocks.{x}.ffn.time_mix_r"] for x in range(ops.n_layers)]))
+                w[f"blocks.{x}.ffn.time_mix_r"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.key_ffn = (ops.stack(
                 [w[f"blocks.{x}.ffn.key.weight"].t() for x in range(ops.n_layers)], exname="_key_ffn"))
             self.receptance_ffn = (ops.stack([
@@ -94,9 +94,12 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             rreshaped = ops.reshape(r, self.ops.rshape)
 
             kv = ops.matvec(kreshaped, vreshaped)
+            kv = ops.reshape(kv, self.ops.postwkvop)
             kkv = ops.multiply(kv, tf)
             premat = ops.add(kkv, state)
+            premat = ops.reshape(premat, self.ops.prematshape)
             wkv = ops.matvec(rreshaped, premat)
+            wkv = ops.reshape(wkv, self.ops.postwkvop)
             state = ops.multiply(state, td)
             state = ops.add(state, kv)
 
