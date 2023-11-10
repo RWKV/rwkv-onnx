@@ -1,5 +1,5 @@
 
-def initONNXFile(path, useAllAvailableProviders=False):
+def initONNXFile(path, STREAMS, useAllAvailableProviders=False):
     import onnxruntime as rt
 
     # session execution provider options
@@ -26,10 +26,15 @@ def initONNXFile(path, useAllAvailableProviders=False):
 
     }
 
-    embed = int(path.split("_")[2].split(".")[0])
-    layers = int(path.split("_")[1])
+    embed = sess.get_inputs()[1].shape[-1]
+    layers = (sess.get_inputs().__len__()-1)//3
     typenum = sess.get_inputs()[1].type
-    print(typenum, embed, layers)
+    heads = sess.get_inputs()[layers*2+1].shape[1]
+    print("HEADS: ", heads)
+    print("LAYERS: ", layers)
+    print("EMBED: ", embed)
+    print("TYPE: ", typenum)
+    
     import numpy as np
 
     if typenum == "tensor(float)":
@@ -71,8 +76,11 @@ def initONNXFile(path, useAllAvailableProviders=False):
     model = InterOp()
 
     # emptyState = []
-    emptyState = np.array(([[[0.01]*embed], [[0.01]*embed]])*layers, typenum)
-    emptyState2 = np.array(([[[[[0.01]*64]*64]*32]])*layers, typenum)
+
+    emptyState = np.zeros((layers*2,STREAMS,embed), dtype=typenum)
+    emptyState2 = np.zeros((layers,STREAMS,heads,embed//heads,embed//heads), dtype=typenum)
+    # emptyState = np.array(([[[0.01]*embed]*STREAMS, STREAMS*[[0.01]*embed]])*layers, typenum)
+    # emptyState2 = np.array(([[[[[0.01]*64]*64]*32]*STREAMS])*layers, typenum)
     print (emptyState.shape)
     print (emptyState2.shape)
 
@@ -110,19 +118,24 @@ import inquirer
 import os
 files = [f for f in os.listdir('.') if os.path.isfile(f)]
 files = [f for f in files if f.endswith(".onnx") or f.endswith(".ort")]
-model, state, state2 = initONNXFile(inquirer.list_input("Select model", choices=files)) 
 
 from tokenizer import world as tokenizer
+STREAMS = 32
+model, state, state2 = initONNXFile(inquirer.list_input("Select model", choices=files), STREAMS) 
 
-prompt = tokenizer.encode("### Instruction:\nPlease write a short story of a man defeating a two headed dragon###Result\n")
+prompt = STREAMS * [tokenizer.encode("### Instruction:\nPlease write a short story of a man defeating a two headed dragon###Result\n")]
+
+print(prompt.__len__())
+
 import tqdm
-for token in tqdm.tqdm(prompt[:-1]):
-    logits, state, state2 = model.forward([token],state, state2)
+for tokennum in tqdm.tqdm(range(prompt[0].__len__()-1)):
+    logits, state, state2 = model.forward([prompt[i][tokennum] for i in range(STREAMS)],state, state2)
 
 print("Loaded prompt.")
 
 for i in range(1000):
-    logits, state, state2 = model.forward([prompt[-1]],state, state2)
+    logits, state, state2 = model.forward([prompt[-1],prompt2[-1]],state, state2)
     prompt = prompt+[npsample(logits[0])]
-    print(tokenizer.decode(prompt[-1:]),end="", flush=True)
+    prompt2 = prompt2+[npsample(logits[1])]
+    print(tokenizer.decode(prompt)+":"+tokenizer.decode(prompt2),end="\r", flush=True)
 print(tokenizer.decode(prompt))

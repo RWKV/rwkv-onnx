@@ -478,12 +478,12 @@ class RWKVOnnxOps():
         
         self.reshape = reshape
 
-        self.kshape = initIntTensor([-1, embed//heads, 1])
-        self.vshape = initIntTensor([-1, 1, embed//heads])
-        self.rshape = initIntTensor([-1, 1, embed//heads])
+        self.kshape = initIntTensor([-1,heads, embed//heads, 1])
+        self.vshape = initIntTensor([-1,heads, 1, embed//heads])
+        self.rshape = initIntTensor([-1, heads, 1, embed//heads])
         self.postwkvop = initIntTensor([-1, heads, embed//heads, embed//heads])
         self.prematshape = initIntTensor([-1, embed//heads, embed//heads])
-        self.normshape = initIntTensor([-1, heads * embed//heads])
+        self.normshape = initIntTensor([-1, embed])
         self.zeroInt = initIntTensor([1]) if opsVersion == 18 else [1]
         self.oneInt = initIntTensor([2]) if opsVersion == 18 else [2]
         self.eight = initTensor([[8.0]])
@@ -506,12 +506,12 @@ class RWKVOnnxOps():
         self.getIndex = getIndex
 
         # convert to float32
-        self.emptyState = np.array((([[[0.00]*embed]*3, [[0.00]*embed]*3]))*layers)
+        self.emptyState = np.array((([[[0.00]*embed]*1, [[0.00]*embed]*1]))*layers)
         self.emptyState = np.array(self.emptyState)
 
         # emptwkv state is n_layers,32,64,64
         hs = embed//heads
-        self.emptyWkvState = np.array(([3*[[[[0.0]*hs]*hs]*heads]]*layers))
+        self.emptyWkvState = np.array(([1*[[[[0.0]*hs]*hs]*heads]]*layers))
 
         if dtype == onnx.TensorProto.FLOAT16 and not fp32inout:
             self.emptyState = self.emptyState.astype(np.float16)

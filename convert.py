@@ -14,7 +14,7 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
            
             self.postprocess0 = ops.initTensor((w["ln_out.weight"].reshape(1,-1)))
             self.postprocess1 = ops.initTensor((w["ln_out.bias"].reshape(1,-1)))
-            self.postprocess2 = ops.initTensor((w["head.weight"]))
+            self.postprocess2 = ops.initTensor((w["head.weight"]).t())
             self.emb = ops.initTensor(w["emb.weight"])
             self.emb1 = ops.initTensor(w["blocks.0.ln0.weight"].reshape(1,-1))
             self.emb2 = ops.initTensor(w["blocks.0.ln0.bias"].reshape(1,-1))
@@ -33,7 +33,7 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             self.time_decay = (ops.stack([
                 w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(1,self.headsnume,-1,1).repeat(1,1,1,self.headsize) for x in range(ops.n_layers)], True))
             self.time_first = (ops.stack([
-                w[f"blocks.{x}.att.time_faaaa"].reshape(self.headsnume,-1,1).repeat(1,1,1,self.headsize)  for x in range(ops.n_layers)],True))
+                w[f"blocks.{x}.att.time_faaaa"].reshape(1,self.headsnume,-1,1).repeat(1,1,1,self.headsize)  for x in range(ops.n_layers)],True))
             self.kktk = (ops.stack(
                 [w[f"blocks.{x}.att.time_mix_k"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.vvtv = (ops.stack(
@@ -94,12 +94,10 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             rreshaped = ops.reshape(r, self.ops.rshape)
 
             kv = ops.matvec(kreshaped, vreshaped)
-            kv = ops.reshape(kv, self.ops.postwkvop)
             kkv = ops.multiply(kv, tf)
             premat = ops.add(kkv, state)
-            premat = ops.reshape(premat, self.ops.prematshape)
             wkv = ops.matvec(rreshaped, premat)
-            wkv = ops.reshape(wkv, self.ops.postwkvop)
+            # wkv = ops.reshape(wkv, self.ops.postwkvop)
             state = ops.multiply(state, td)
             state = ops.add(state, kv)
 
@@ -184,8 +182,8 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
                     x, ops.convertToFloat16(statea[i]), ops.convertToFloat16(stateb[i]),ops.convertToFloat32(statec[i]), i)
                 ot = ot + ([ops.convertToFloat32(aaa),ops.convertToFloat32(bbb)])   
                 ot2 = ot2 + [ops.convertToFloat32(ccc)]
-            x = ops.matvec(self.postprocess2,ops.layernorm(x, self.postprocess0,
-                                                            self.postprocess1))
+            x = ops.matvec(ops.layernorm(x, self.postprocess0,
+                                                            self.postprocess1),self.postprocess2)
 
             return ops.convertToFloat32(x), ot, ot2
 
@@ -199,9 +197,9 @@ import torch
 def convert_model(path, dtype):
     #delete all .onnx and .bin files
     import os
-    for file in os.listdir("."):
-        if file.endswith(".onnx") or file.endswith(".bin"):
-            os.remove(file)
+    # for file in os.listdir("."):
+    #     if file.endswith(".onnx") or file.endswith(".bin"):
+    #         os.remove(file)
     w = torch.load(path, map_location="cpu")
     dims = len(w["blocks.0.att.key.weight"])
     headsnume, headsize = w[f"blocks.0.att.time_decay"].shape
