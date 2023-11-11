@@ -4,3 +4,5 @@ __pycache__
 *.pth
 *.ort
 *.config
+*.data
+*node_modules**

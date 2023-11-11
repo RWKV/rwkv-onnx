@@ -133,9 +133,9 @@ for tokennum in tqdm.tqdm(range(prompt[0].__len__()-1)):
 
 print("Loaded prompt.")
 
-for i in range(1000):
-    logits, state, state2 = model.forward([prompt[-1],prompt2[-1]],state, state2)
-    prompt = prompt+[npsample(logits[0])]
-    prompt2 = prompt2+[npsample(logits[1])]
-    print(tokenizer.decode(prompt)+":"+tokenizer.decode(prompt2),end="\r", flush=True)
-print(tokenizer.decode(prompt))
+# for i in range(1000):
+#     logits, state, state2 = model.forward([prompt[-1],prompt2[-1]],state, state2)
+#     prompt = prompt+[npsample(logits[0])]
+#     prompt2 = prompt2+[npsample(logits[1])]
+#     print(tokenizer.decode(prompt)+":"+tokenizer.decode(prompt2),end="\r", flush=True)
+# print(tokenizer.decode(prompt))
