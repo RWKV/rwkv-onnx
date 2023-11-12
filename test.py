@@ -120,7 +120,7 @@ files = [f for f in os.listdir('.') if os.path.isfile(f)]
 files = [f for f in files if f.endswith(".onnx") or f.endswith(".ort")]
 
 from tokenizer import world as tokenizer
-STREAMS = 32
+STREAMS = 1
 model, state, state2 = initONNXFile(inquirer.list_input("Select model", choices=files), STREAMS) 
 
 prompt = STREAMS * [tokenizer.encode("### Instruction:\nPlease write a short story of a man defeating a two headed dragon###Result\n")]
@@ -133,9 +133,9 @@ for tokennum in tqdm.tqdm(range(prompt[0].__len__()-1)):
 
 print("Loaded prompt.")
 
-# for i in range(1000):
-#     logits, state, state2 = model.forward([prompt[-1],prompt2[-1]],state, state2)
-#     prompt = prompt+[npsample(logits[0])]
-#     prompt2 = prompt2+[npsample(logits[1])]
-#     print(tokenizer.decode(prompt)+":"+tokenizer.decode(prompt2),end="\r", flush=True)
-# print(tokenizer.decode(prompt))
+for i in range(1000):
+    logits, state, state2 = model.forward([prompt[i][-1] for i in range(STREAMS)],state, state2)
+    prompt = [prompt[i]+[npsample(logits[i])] for i in range(STREAMS)]
+  
+    print(tokenizer.decode(prompt[0][-1:]), end="", flush=True)
+print(tokenizer.decode(prompt))

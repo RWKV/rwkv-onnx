@@ -183,8 +183,7 @@ class RWKVOnnxOps():
                 'MeanVarianceNormalization',
                 inputs=[x],
                 outputs=[name],
-                axes=dim,
-                keepdims=1
+                axes=dim
             )
             self.NodeList.append(node)
 
@@ -227,7 +226,6 @@ class RWKVOnnxOps():
 
         def matvec(x, y, outputfp32 = False):
             name = f"matvec_{self.nm}_out"
-            oname = f"matvec_g_{self.nm}_out"
             self.nm += 1
             node = onnx.helper.make_node(
                 'MatMul',
@@ -261,11 +259,12 @@ class RWKVOnnxOps():
 
         self.prod = prod
 
-        def mul(x, y):
+        def mul(x, y, opname=""):
             name = f"mul_{self.nm}_out"
             self.nm += 1
             node = onnx.helper.make_node(
                 'Mul',
+                name=opname,
                 inputs=[x, y],
                 outputs=[name]
             )
@@ -275,21 +274,11 @@ class RWKVOnnxOps():
 
         self.multiply = mul
 
-        def squeeze(x):
-            name = f"squeeze_{self.nm}_out"
-            self.nm += 1
-            node = onnx.helper.make_node(
-                'Squeeze',
-                inputs=[x],
-                outputs=[name]
-            )
-            self.NodeList.append(node)
 
-            return name
 
-        def add(x, y):
+        def add(x, y, newName = None):
 
-            name = f"add_{self.nm}_out"
+            name = f"add_{self.nm}_out" if newName == None else newName
             self.nm += 1
             node = onnx.helper.make_node(
                 'Add',
@@ -375,8 +364,8 @@ class RWKVOnnxOps():
 
         self.divide = divide
 
-        def layernorm17(x, w, b):
-            name = f"layernorm_{self.nm}_out"
+        def layernorm17(x, w, b, newName = None):
+            name = f"layernorm_{self.nm}_out" if newName == None else newName
             self.nm += 1
             node = onnx.helper.make_node(
                 'LayerNormalization',
@@ -388,21 +377,31 @@ class RWKVOnnxOps():
             return name 
         # ort 15 does not support layernorm
 
-        def layernorm(x, w, b):
-            xee2 = self.subtract(x,self.mean(x))
-            x2 = self.add(self.sqrt(self.add(self.mean(self.multiply(xee2,xee2)), self.margins16)), self.margins16)
-            return self.add(self.multiply(w, self.divide(xee2, x2)), b)
+        def layernorm(x, w, b, newName = None):
+            # xee2 = self.subtract(x,self.mean(x))
+            # x2 = self.add(self.sqrt(self.add(self.mean(self.multiply(xee2,xee2)), self.margins16)), self.margins16)
+            # xo = self.divide(xee2, x2)
+
+            xo = self.meanvarnorm(x)
+            
+            return self.add(self.multiply(w, xo), b, newName)
 
 
-        self.layernorm = layernorm if opsVersion != 17 else layernorm17
+        self.layernorm = layernorm if opsVersion < 17 else layernorm17
 
         def groupnorm(x, w, b):
-            x = self.reshape(x, self.premshape)
-            xee2 = self.subtract(x,self.mean(x,self.oneInt))
-            x2 = self.add(self.sqrt(self.add(self.mean(self.multiply(xee2,xee2),self.oneInt), self.margins32)), self.margins32)
-            return self.add(self.multiply(w, self.divide(xee2, x2)), b)
+            # xee2 = self.subtract(x,self.mean(x,self.oneInt))
+            # x2 = self.add(self.sqrt(self.add(self.mean(self.multiply(xee2,xee2),self.oneInt), self.margins32)), self.margins32)
+            # lnx = self.divide(xee2, x2)
+            lnx = self.meanvarnorm(x, self.oneInt)
+            xo = self.add(self.multiply(w, lnx), b)
+            xo = self.reshape(xo, self.normalshape)
+            return xo
         
         def groupnorm18(x, w, b):
+
+            x = self.reshape(x, self.normshape)
+            
             name = f"groupnorm_{self.nm}_out"
             self.nm += 1
             node = onnx.helper.make_node(
@@ -412,11 +411,12 @@ class RWKVOnnxOps():
                 num_groups=heads
             )
             self.NodeList.append(node)
+            name = self.reshape(name, self.normalshape)
             return name
             
 
         
-        self.groupnorm = groupnorm
+        self.groupnorm = groupnorm if opsVersion < 18 else groupnorm18
 
         def getIndex(x, y):
             name = f"getIndex_{self.nm}_out"
@@ -483,9 +483,11 @@ class RWKVOnnxOps():
         self.rshape = initIntTensor([-1, heads, 1, embed//heads])
         self.postwkvop = initIntTensor([-1, heads, embed//heads, embed//heads])
         self.prematshape = initIntTensor([-1, embed//heads, embed//heads])
-        self.normshape = initIntTensor([-1, embed])
+        self.normshape = initIntTensor([-1, heads, embed//heads])
+        self.normalshape = initIntTensor([-1, embed])
+        self.pregnshape = initIntTensor([-1, heads, embed//heads])
         self.zeroInt = initIntTensor([1]) if opsVersion == 18 else [1]
-        self.oneInt = initIntTensor([2]) if opsVersion == 18 else [2]
+        self.oneInt = initIntTensor([3]) if opsVersion == 18 else [3]
         self.eight = initTensor([[8.0]])
         self.premshape = initIntTensor([-1, heads,  embed//heads])
 
@@ -525,12 +527,12 @@ class RWKVOnnxOps():
                                                              onnx.TensorProto.INT32,
                                                              [-1]), "input0"
 
-            emptyState = list(map(lambda x: (onnx.helper.make_tensor_value_info("instate"+str(x),
+            emptyState = list(map(lambda x: (onnx.helper.make_tensor_value_info("state"+str(x),
                                                                                 onnx.TensorProto.FLOAT if fp32inout else dtype,
-                                                                                [-1,embed]), "instate"+str(x)), range((2)*layers)))
-            emptystate2 = list(map(lambda x: (onnx.helper.make_tensor_value_info("instatewkv"+str(x),
+                                                                                [-1,embed]), "state"+str(x)), range((2)*layers)))
+            emptystate2 = list(map(lambda x: (onnx.helper.make_tensor_value_info("statewkv"+str(x),
                                                                                     onnx.TensorProto.FLOAT if fp32inout else dtype,
-                                                                                    [-1,heads, hs, hs]), "instatewkv"+str(x)), range(layers)))
+                                                                                    [-1,heads, hs, hs]), "statewkv"+str(x)), range(layers)))
             outs = x.forward(
                 inputtensor[1], list(map(lambda x: x[1], emptyState)), list(map(lambda x: x[1], emptystate2)))
             print(self.TensorList.__len__())

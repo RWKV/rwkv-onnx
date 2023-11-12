@@ -27,13 +27,13 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             self.ln2b = (ops.stack(
                 [w[f"blocks.{x}.ln2.bias"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.lnxw = (ops.stack(
-                [w[f"blocks.{x}.att.ln_x.weight"].reshape(1,self.headsnume,-1) for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.ln_x.weight"].reshape(1,self.headsnume,1,-1) for x in range(ops.n_layers)]))
             self.lnxb = (ops.stack(
-                [w[f"blocks.{x}.att.ln_x.bias"].reshape(1,self.headsnume,-1)  for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.ln_x.bias"].reshape(1,self.headsnume,1,-1)  for x in range(ops.n_layers)]))
             self.time_decay = (ops.stack([
-                w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(1,self.headsnume,-1,1).repeat(1,1,1,self.headsize) for x in range(ops.n_layers)], True))
+                w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(1,self.headsnume,-1,1) for x in range(ops.n_layers)], True))
             self.time_first = (ops.stack([
-                w[f"blocks.{x}.att.time_faaaa"].reshape(1,self.headsnume,-1,1).repeat(1,1,1,self.headsize)  for x in range(ops.n_layers)],True))
+                w[f"blocks.{x}.att.time_faaaa"].reshape(1,self.headsnume,-1,1)  for x in range(ops.n_layers)],True))
             self.kktk = (ops.stack(
                 [w[f"blocks.{x}.att.time_mix_k"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.vvtv = (ops.stack(
@@ -97,17 +97,17 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             kkv = ops.multiply(kv, tf)
             premat = ops.add(kkv, state)
             wkv = ops.matvec(rreshaped, premat)
-            # wkv = ops.reshape(wkv, self.ops.postwkvop)
-            state = ops.multiply(state, td)
-            state = ops.add(state, kv)
 
-            return wkv, state
+            state2 = ops.multiply(state, td)
+            state3 = ops.add(state2, kv, state+"out")
+
+            return wkv, state3
         
 
         @ops.layerdef
         def doLayer(self, x, statea, stateb, statec, xx):
 
-            xy = ops.layernorm(x, self.ln1w[xx], self.ln1b[xx])
+            xy = ops.layernorm(x, self.ln1w[xx], self.ln1b[xx], statea+"out")
 
             k = ops.matvec(
                  ops.lerp(statea, xy, self.kktk[xx]),self.key[xx], True)
@@ -131,14 +131,15 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
         # x = self.output(x * g)
             lnx = ops.groupnorm(wkv8, self.lnxw[xx], self.lnxb[xx])
 
-            lnxo = ops.reshape(lnx, self.ops.normshape)
             
-            mvvo = ops.matvec(ops.multiply(gg, lnxo),
+            gm = ops.multiply(gg, lnx, f"gateXgroupnorm-Layer{xx}")
+           
+            mvvo = ops.matvec(gm,
                 self.outputvv[xx])
             
             mvv = ops.add(mvvo, x)
 
-            ddd = ops.layernorm(mvv, self.ln2w[xx], self.ln2b[xx])
+            ddd = ops.layernorm(mvv, self.ln2w[xx], self.ln2b[xx], stateb+"out")
 
             kml = ops.lerp(
                 stateb, ddd, self.time_mix_k_ffn[xx])
@@ -233,7 +234,7 @@ def convert():
 
 # Define the variables
 input_path = tk.StringVar()
-mybits = tk.IntVar(value=8)
+mybits = tk.IntVar(value=32)
 use_external_data = tk.BooleanVar(value=True)
 splitExternalData = tk.BooleanVar(value=False)
 fp32inout = tk.BooleanVar(value=False)
@@ -249,11 +250,11 @@ input_button = tk.Button(root, text="Browse...", command=choose_input_file)
 
 
 
-bits = tk.OptionMenu(root, mybits, 8, 16, 32)
+bits = tk.OptionMenu(root, mybits, 16, 32)
 check_button3 = tk.Checkbutton(root, text="External Data", variable=use_external_data)
 check_button4 = tk.Checkbutton(root, text="Split External Data", variable=splitExternalData)
 check_button5 = tk.Checkbutton(root, text="Float32 inputs/outputs", variable=fp32inout)
-input_select = tk.OptionMenu(root, version, 15, 17, 18)
+input_select = tk.OptionMenu(root, version, 15, 17)
 
 
 convert_button = tk.Button(root, text="Convert", command=convert)

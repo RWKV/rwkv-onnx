@@ -12,7 +12,8 @@ import { sampleLogits } from './sampler/sample';
 import { createWriteStream } from 'fs';
 
 type WkvStateName = "wkv"|""
-type StateKey = `instate${WkvStateName}${number}`
+type StateKey = `state${WkvStateName}${number}`
+type OutStateKey = `state${WkvStateName}${number}out`
 
 type State = {
     
@@ -56,24 +57,21 @@ class RWKV<Initialized extends boolean = false> {
     }
     
     
-    unzipState(state:State):State[] {
+    unzipState(state:State, oldStates:State[]):State[] {
         const result:State[] = []
 
-        const B = state.instate0.dims[0]
+        const B = oldStates.length
 
         for (let i = 0; i < B; i++) {
-            const newState:State = {}
             for (const key in state) {
                 const tensor:TypedTensor<"float32"> = state[key as StateKey]
                 const dims = tensor.dims
                 const muldims = dims.slice(1).reduce((a,b) => a*b)
-                const data = tensor.data.slice(i*muldims,(i+1)*muldims)
-                const ten = new Tensor(data,[1,...dims.slice(1)])
-                newState[key as StateKey] = ten
+                const data = tensor.data.subarray(i*muldims,(i+1)*muldims)
+                oldStates[i][key as StateKey].data.set(data)
             }
-            result.push(newState)
         }
-        return result
+        return oldStates
     }
 
     zipState(states:State[]) {
@@ -111,45 +109,26 @@ class RWKV<Initialized extends boolean = false> {
             const states = jobs.map(job => job.state)
             this.zipState(states)
             const tokens = new Tensor("int32",jobs.map(job => job.token),[jobs.length])
-            const inputnamesreversed:StateKey[] = this.model!.inputNames as StateKey[]
-            const inputnames = inputnamesreversed.reverse()
+           
+            const stateNames = this.model!.inputNames.filter(name => name.startsWith("state")) as StateKey[]
             
-            const currenttime = Date.now()
-
             const outputs = await this.model!.run({"input0":tokens,...this.stateHolder});
-            // console.log("OutputOutputs:",Object.keys(outputs))
-            // console.log("Concurrent Jobs: ", jobs.length, " Time: ", Date.now()-currenttime)
-
-            const splits = Object.keys(outputs).reduce((a,b) => ({
-                "logits": outputs[b].dims[1] == Math.pow(2,16) ? [...a.logits,outputs[b] as TypedTensor<"float32">] : a.logits,
-                "instate": outputs[b].dims.length == 2 && outputs[b].dims[1] != Math.pow(2,16) ?[...a.instate,outputs[b] as TypedTensor<"float32">] : a.instate,
-                "instatewkv": outputs[b].dims.length == 4 ?[...a.instatewkv,outputs[b] as TypedTensor<"float32">] : a.instatewkv
-            }), {
-                "logits": [] as TypedTensor<"float32">[],
-                "instate": [] as TypedTensor<"float32">[],
-                "instatewkv": [] as TypedTensor<"float32">[]
-            })
+    
             
 
-            const logits = splits.logits[0] as Tensor
+            const logits = Object.values(outputs).find(
+                (tensor) => tensor.dims[1] == 2**16
+            ) as Tensor
 
-            // console.log("logits: ", splits.logits.length)
-            // console.log("instate: ", splits.instate.length)
-            // console.log("instatewkv: ", splits.instatewkv.length)
+            const nextInputState = stateNames.reduce((acc,name) => {
+                acc[name] = outputs[name+"out"] as TypedTensor<"float32">
+                return acc
+            }, {} as State)
 
-            const nextInputState = {} as State
 
-            for (let i = 0; i < splits.instate.length; i++) {
-                const key = "instate"+i as StateKey;
-                nextInputState[key] = splits.instate[i]
-            }
 
-            for (let i = 0; i < splits.instatewkv.length; i++) {
-                const key = ("instatewkv"+i) as StateKey;
-                nextInputState[key] = splits.instatewkv[i]
-            }
 
-            const newstates = this.unzipState(nextInputState)
+            const newstates = this.unzipState(nextInputState, states)
 
             this.stateHolder = {}
 
@@ -167,7 +146,7 @@ class RWKV<Initialized extends boolean = false> {
 
 
     async load():Promise<RWKV<true>> {
-        const sess:InferenceSession = await (ort.InferenceSession as InferenceSessionFactory).create('../../RWKV_32_2560_32_15_QUInt8-pc-norr-ext.onnx', {
+        const sess:InferenceSession = await (ort.InferenceSession as InferenceSessionFactory).create(this.path, {
             interOpNumThreads: 8,
             intraOpNumThreads: 8,
             executionMode: 'parallel',
@@ -181,9 +160,9 @@ class RWKV<Initialized extends boolean = false> {
 
         // Get the shape of the input
         
-        this.embed = 2560
+        this.embed = 2048
         this.layers = (inputnames.length-1)/3
-        this.heads = 40 // 32 if 1b5
+        this.heads = 32 // 32 if 1b5
 
         // console.log("embed: ", this.embed)
         // console.log("layers: ", this.layers)
@@ -196,11 +175,11 @@ class RWKV<Initialized extends boolean = false> {
     newState():State {
         const result:State = {}
         for (let i = 0; i < this.layers*2; i++) {
-            result[`instate${i}` as StateKey] = new Tensor("float32",new Float32Array(this.embed),[1,this.embed])
+            result[`state${i}` as StateKey] = new Tensor("float32",new Float32Array(this.embed),[1,this.embed])
         }
 
         for (let i = 0; i < this.layers; i++) {
-            result[`instatewkv${i}` as StateKey] = new Tensor("float32",new Float32Array(((this.embed * this.embed)/this.heads)),[1,this.heads,this.embed/this.heads, this.embed/this.heads])
+            result[`statewkv${i}` as StateKey] = new Tensor("float32",new Float32Array(((this.embed * this.embed)/this.heads)),[1,this.heads,this.embed/this.heads, this.embed/this.heads])
         }
         return result
     }
@@ -212,21 +191,19 @@ class RWKV<Initialized extends boolean = false> {
         }
         
         var current = 0;
-        var outlogits: Tensor;
 
-        const callback = (logits:Tensor,instate:State) => {
+        const callback = (logits:Tensor,nextstate:State) => {
             current+=1
-            state = instate
-            outlogits = logits
+            console.log("current: ",current, nextstate.state1.data[0])
             if (current == context.length) {
                 resolve({
-                    state,
-                    probs: outlogits
+                    state: nextstate,
+                    probs: logits
                 })
             }else{
                 this.jobQueue.push({
                     token: context[current],
-                    state,
+                    state: nextstate,
                     callback
                 })
             }
@@ -250,7 +227,7 @@ class RWKV<Initialized extends boolean = false> {
     }
 
     sampleLogits(logits:Tensor):number {
-        return sampleLogits(logits.data as Float32Array,1.0,1.0).token
+        return sampleLogits(logits.data as Float32Array,0.9,0.9).token
     }
 
     async genToken(input:ProbState, callback:(i:number)=>void):Promise<ProbState>{
@@ -271,7 +248,7 @@ class RWKV<Initialized extends boolean = false> {
 async function main() {
     try {
 
-        const tokens = WorldTokenizer.encode("Can you please tell me who the queen of sussex is?")
+        const tokens = WorldTokenizer.encode("\n### Instruction:\nCan you please write a short epic fantasy story? ### Response: \n")
 
         // create a new session and load the specific model.
         //
@@ -285,12 +262,14 @@ async function main() {
         
         // console.log("testTensor.data: ", testTensor.data.slice(0,2))
 
-        const model = await new RWKV('../../RWKV_32_2560_32_15_QUInt8-pc-norr-ext.onnx').load()
+        const model = await new RWKV('../../RWKV_24_2048_32_15.onnx').load()
         model.startListening()
 
         const writeStream = createWriteStream("./out.txt")
         
         var curstate = await model.readContext(tokens)
+
+        console.log("curstate: ", curstate.state.state1.data[0])
 
         for(var i = 0; i < 100; i++){
             curstate = await model.genToken(curstate,
