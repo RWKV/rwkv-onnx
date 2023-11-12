@@ -5,7 +5,11 @@
 import * as ort from 'onnxruntime-node';
 
 import {InferenceSession, Tensor, TypedTensor, InferenceSessionFactory} from 'onnxruntime-common';
+import { WorldTokenizer } from './tokenizer/tokenizer';
+import { sampleLogits } from './sampler/sample';
 
+// write data content to a file continously
+import { createWriteStream } from 'fs';
 
 type WkvStateName = "wkv"|""
 type StateKey = `instate${WkvStateName}${number}`
@@ -19,6 +23,11 @@ type TokenJob = {
     token: number
     state: State
     callback: (logits:Tensor,state:State) => void
+}
+
+type ProbState = {
+    probs: Tensor,
+    state: State
 }
 
 // function zipState(states:State[]):State {
@@ -105,17 +114,13 @@ class RWKV<Initialized extends boolean = false> {
             const inputnamesreversed:StateKey[] = this.model!.inputNames as StateKey[]
             const inputnames = inputnamesreversed.reverse()
             
-            const outputnamesReversed = this.model!.outputNames as string[];
-            const outputnames = outputnamesReversed.reverse()
-            // console.log("outputnames: ", outputnames)
-
             const currenttime = Date.now()
 
             const outputs = await this.model!.run({"input0":tokens,...this.stateHolder});
-            
-            console.log("Concurrent Jobs: ", jobs.length, " Time: ", Date.now()-currenttime)
+            // console.log("OutputOutputs:",Object.keys(outputs))
+            // console.log("Concurrent Jobs: ", jobs.length, " Time: ", Date.now()-currenttime)
 
-            const splits = outputnames.reduce((a,b) => ({
+            const splits = Object.keys(outputs).reduce((a,b) => ({
                 "logits": outputs[b].dims[1] == Math.pow(2,16) ? [...a.logits,outputs[b] as TypedTensor<"float32">] : a.logits,
                 "instate": outputs[b].dims.length == 2 && outputs[b].dims[1] != Math.pow(2,16) ?[...a.instate,outputs[b] as TypedTensor<"float32">] : a.instate,
                 "instatewkv": outputs[b].dims.length == 4 ?[...a.instatewkv,outputs[b] as TypedTensor<"float32">] : a.instatewkv
@@ -200,6 +205,63 @@ class RWKV<Initialized extends boolean = false> {
         return result
     }
 
+    async readContext(context:number[],state?:State):Promise<ProbState>{
+        return new Promise((resolve,reject) => {
+        if (state == undefined) {
+            state = this.newState()
+        }
+        
+        var current = 0;
+        var outlogits: Tensor;
+
+        const callback = (logits:Tensor,instate:State) => {
+            current+=1
+            state = instate
+            outlogits = logits
+            if (current == context.length) {
+                resolve({
+                    state,
+                    probs: outlogits
+                })
+            }else{
+                this.jobQueue.push({
+                    token: context[current],
+                    state,
+                    callback
+                })
+            }
+        }
+
+        this.jobQueue.push({
+            token: context[current],
+            state,
+            callback
+        })
+
+        
+    })
+
+}
+
+    startListening() {
+        setInterval(() => {
+            this.run()
+        }, 10);
+    }
+
+    sampleLogits(logits:Tensor):number {
+        return sampleLogits(logits.data as Float32Array,1.0,1.0).token
+    }
+
+    async genToken(input:ProbState, callback:(i:number)=>void):Promise<ProbState>{
+        const {state,probs} = input
+        const token = this.sampleLogits(probs)
+        callback(token)
+        const newstate = await this.readContext([token],state)
+        return newstate
+    }
+
+    
 
 }
 
@@ -208,6 +270,9 @@ class RWKV<Initialized extends boolean = false> {
 // use an async context to call onnxruntime functions.
 async function main() {
     try {
+
+        const tokens = WorldTokenizer.encode("Can you please tell me who the queen of sussex is?")
+
         // create a new session and load the specific model.
         //
         // the model in this example contains a single MatMul node
@@ -221,32 +286,30 @@ async function main() {
         // console.log("testTensor.data: ", testTensor.data.slice(0,2))
 
         const model = await new RWKV('../../RWKV_32_2560_32_15_QUInt8-pc-norr-ext.onnx').load()
+        model.startListening()
+
+        const writeStream = createWriteStream("./out.txt")
         
-        // run model.run every 100ms
-        setInterval(() => {
-            model.run()
-        }, 100);
+        var curstate = await model.readContext(tokens)
 
-        const pushToken = (stuff:number, state:State) => {
-            // console.log("stuff: ", stuff)
+        for(var i = 0; i < 100; i++){
+            curstate = await model.genToken(curstate,
+                (token) => {
+                    try{
 
-            model.jobQueue.push({
-                token: 0,
-                state,
-                callback: (logits,state) => {
-                    pushToken(stuff+1,state)
+                        const text = WorldTokenizer.decode([token])
+                        writeStream.write(text)
+                        
+                    }
+                    catch(e){
+                        console.log("error: ", e)
+                    }
                 }
-            })
+            )
         }
-
-        // every 3 seconds, push another token
-
-        setInterval(() => {
-            pushToken(0,model.newState())
-        }
-        , 3000);
-
-        // const state = model.newState()
+        
+        
+        
 
 
         while (true) {

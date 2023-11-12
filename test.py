@@ -126,7 +126,7 @@ model, state, state2 = initONNXFile(inquirer.list_input("Select model", choices=
 prompt = STREAMS * [tokenizer.encode("### Instruction:\nPlease write a short story of a man defeating a two headed dragon###Result\n")]
 
 print(prompt.__len__())
-
+# 3b is 2.5 tokens pers econd with 32 streams = 64 + 32 = 96 tokens per second
 import tqdm
 for tokennum in tqdm.tqdm(range(prompt[0].__len__()-1)):
     logits, state, state2 = model.forward([prompt[i][tokennum] for i in range(STREAMS)],state, state2)
