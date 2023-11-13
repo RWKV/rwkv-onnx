@@ -31,9 +31,9 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             self.lnxb = (ops.stack(
                 [w[f"blocks.{x}.att.ln_x.bias"].reshape(1,self.headsnume,1,-1)  for x in range(ops.n_layers)]))
             self.time_decay = (ops.stack([
-                w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(1,self.headsnume,-1,1) for x in range(ops.n_layers)], True))
+                w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(1,self.headsnume,-1,1) for x in range(ops.n_layers)]))
             self.time_first = (ops.stack([
-                w[f"blocks.{x}.att.time_faaaa"].reshape(1,self.headsnume,-1,1)  for x in range(ops.n_layers)],True))
+                w[f"blocks.{x}.att.time_faaaa"].reshape(1,self.headsnume,-1,1)  for x in range(ops.n_layers)]))
             self.kktk = (ops.stack(
                 [w[f"blocks.{x}.att.time_mix_k"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.vvtv = (ops.stack(
@@ -110,12 +110,12 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             xy = ops.layernorm(x, self.ln1w[xx], self.ln1b[xx], statea+"out")
 
             k = ops.matvec(
-                 ops.lerp(statea, xy, self.kktk[xx]),self.key[xx], True)
+                 ops.lerp(statea, xy, self.kktk[xx]),self.key[xx])
 
             v = ops.matvec(ops.lerp(
-                statea, xy, self.vvtv[xx]),self.value[xx], True)
+                statea, xy, self.vvtv[xx]),self.value[xx])
             rr = ops.matvec(ops.lerp(statea, xy, self.rrtr[xx]),
-                self.receptance[xx], True)
+                self.receptance[xx])
             
             g = ops.matvec(
                  ops.lerp(statea, xy, self.ggtg[xx]),self.gate[xx])

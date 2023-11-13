@@ -177,16 +177,22 @@ class RWKVOnnxOps():
         def meanvarnorm(x, dim=None):
             if dim == None:
                 dim = self.zeroInt
+
+            if dtype == onnx.TensorProto.FLOAT16:
+                x = convertToFloat32(x)
+                
             name = f"meanvarnorm_{self.nm}_out"
             self.nm += 1
             node = onnx.helper.make_node(
                 'MeanVarianceNormalization',
                 inputs=[x],
                 outputs=[name],
-                axes=dim
+                axes=dim,
+                
             )
             self.NodeList.append(node)
-
+            if dtype == onnx.TensorProto.FLOAT16:
+                name = convertToFloat16(name)
             return name
         
         self.meanvarnorm = meanvarnorm
@@ -585,23 +591,10 @@ class RWKVOnnxOps():
             del modelDef
 
             onnx.checker.check_model(exportname)
+            
             onnx.shape_inference.infer_shapes_path(exportname, check_type=True, strict_mode=True, data_prop=True)
 
-            if quantized:
-                import onnx
-                from onnxruntime.quantization import quantize_dynamic, QuantType
-                model_fp32 = exportname
-                model_quant = "quantized_"+exportname
-                try:
-                    quantized_model = quantize_dynamic(model_fp32, model_quant, per_channel=True, reduce_range=True, use_external_data_format=True)
-                    import os
-                    os.remove(model_fp32)
-                    os.rename(model_quant, model_fp32)
-                    os.remove(externalname+".bin")
-                except:
-                    print("Quantization failed, chase this line and update the above code to use external data(if you are using a model more than 1b5)")
-                    exit()
-
+            
             # run model
             print("Model saved to: ", exportname, " and is ready to be run")
             print("Data type: ", dtype)
