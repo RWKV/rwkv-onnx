@@ -10,6 +10,7 @@
 #include <vector>
 #include <iostream>
 #include "tokenizer/tokenizer.hpp"
+#include "sampler/sample.hpp"
 
 
 struct State {
@@ -50,9 +51,9 @@ class RWKV {
 
             // Set up options for the session
              
-            sessionOptions.SetIntraOpNumThreads(6);
-            sessionOptions.SetInterOpNumThreads(6);
-            sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_BASIC);
+            sessionOptions.SetIntraOpNumThreads(2);
+            sessionOptions.SetInterOpNumThreads(16);
+            sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
 
             // Create a session with the model file
             session = new Ort::Session(env, model_path.c_str(), sessionOptions);
@@ -183,17 +184,9 @@ class RWKV {
         // slice(0,-1)
 
         float* probs = outTensors[layers*3].GetTensorMutableData<float>();
+        auto samp = typical(input.size(),probs, 0.9, 0.9);
         for(int i = 0; i < input.size(); i++) {
-            auto pointr = &probs[i * vocab_size];
-            float max = -999;
-            int maxidx = 0;
-            for (int j = 0; j < vocab_size; j++) {
-                if (pointr[j] > max) {
-                    max = pointr[j];
-                    maxidx = j;
-                }
-            }
-            input[i]->state[layers*3].GetTensorMutableData<int32_t>()[0] = maxidx;
+            input[i]->state[layers*3].GetTensorMutableData<int32_t>()[0] = samp[i];
         }
     }
 };
@@ -219,13 +212,21 @@ int main() {
         State* state = rwkv->newState();
 
         std::cout << "Creating token..." << std::endl;
-        state->state.back().GetTensorMutableData<int32_t>()[0] = worldTokenizer.encode("Hello World!")[0];
+
+        auto context = worldTokenizer.encode("### Instruction:\nWrite a story about a man going to fight in the war against the puppies, showcasing the atrocities of war.\n### Response:\n");
+
+        state->state.back().GetTensorMutableData<int32_t>()[0] = context[0];
        
 
         std::cout << "Digesting token..." << std::endl;
         std::vector<State*> input = {state};
+        int i = 0;
         while(1){
             rwkv->digest(input);
+            if(i < context.size()){
+                state->state.back().GetTensorMutableData<int32_t>()[0] = context[i];
+                i++;
+            }
             std::cout << worldTokenizer.decode({state->state.back().GetTensorMutableData<int32_t>()[0]}) << std::flush;
         }
 

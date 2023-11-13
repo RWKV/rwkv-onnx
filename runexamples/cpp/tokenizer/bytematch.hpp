@@ -7,32 +7,32 @@
 // ostream_iterator
 #include <iterator>
 
-#define uint8 unsigned char
+#define uchar unsigned char
 
-std::vector<uint8> hexToBytes(const std::string &hexString) {
+std::vector<uchar> hexToBytes(const std::string &hexString) {
     if (hexString.length() % 2 != 0) {
         throw std::runtime_error("Invalid hex string length for conversion to bytes.");
     }
     
     size_t len = hexString.length() / 2;
-    std::vector<uint8> bytes;
+    std::vector<uchar> bytes;
     bytes.reserve(len);
 
     for (size_t i = 0; i < len; ++i) {
         std::string byteString = hexString.substr(2 * i, 2);
-        uint8 byte = std::stoi(byteString, nullptr, 16);
+        uchar byte = std::stoi(byteString, nullptr, 16);
         bytes.push_back(byte);
     }
 
     return bytes;
 }
 
-std::vector<uint8> findPythonByteObjects(const std::string &input) {
+std::vector<uchar> findPythonByteObjects(const std::string &input) {
     // Regular expression pattern to match Python byte literals b'...'
     std::regex byteObjectPattern(R"(b'([^']*)')");
 
     std::smatch match;
-    std::vector<uint8> byteArray;
+    std::vector<uchar> byteArray;
 
     std::string::const_iterator searchStart = input.cbegin();
     while (std::regex_search(searchStart, input.cend(), match, byteObjectPattern)) {
@@ -42,7 +42,7 @@ std::vector<uint8> findPythonByteObjects(const std::string &input) {
         // Replace escape sequences with actual byte values
         std::regex escapePattern(R"(\\x([a-fA-F0-9]{2}))");
         std::ostringstream replacedByteString;
-        std::regex_replace(std::ostream_iterator<uint8>(replacedByteString),
+        std::regex_replace(std::ostream_iterator<uchar>(replacedByteString),
                            byteString.begin(), byteString.end(),
                            escapePattern, "$1");
 
@@ -62,9 +62,9 @@ std::vector<uint8> findPythonByteObjects(const std::string &input) {
 //     std::string input = "Some text with Python byte object b'\\x61\\x62\\x63'";
     
 //     try {
-//         std::vector<uint8> byteArray = findPythonByteObjects(input);
+//         std::vector<uchar> byteArray = findPythonByteObjects(input);
 //         std::cout << "Byte array: [ ";
-//         for (uint8 byte : byteArray) {
+//         for (uchar byte : byteArray) {
 //             std::cout << std::hex << static_cast<int>(byte) << " ";
 //         }
 //         std::cout << "]" << std::endl;
