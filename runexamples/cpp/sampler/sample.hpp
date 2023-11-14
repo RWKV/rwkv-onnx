@@ -5,7 +5,6 @@ int typical(float* _logits, float _temp = 0.9, float _tau = 0.8)
     // choose top token
     nc::NdArray<double> logits = nc::NdArray<double>(1,len);
     for (int i = 0; i < len; i++) {
-        
         logits[i] = _logits[i];
     }
 

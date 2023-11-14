@@ -254,7 +254,7 @@ bits = tk.OptionMenu(root, mybits, 16, 32)
 check_button3 = tk.Checkbutton(root, text="External Data", variable=use_external_data)
 check_button4 = tk.Checkbutton(root, text="Split External Data", variable=splitExternalData)
 check_button5 = tk.Checkbutton(root, text="Float32 inputs/outputs", variable=fp32inout)
-input_select = tk.OptionMenu(root, version, 15, 17)
+input_select = tk.OptionMenu(root, version, 15, 17, 19)
 
 
 convert_button = tk.Button(root, text="Convert", command=convert)

@@ -150,7 +150,7 @@ class RWKVOnnxOps():
                 dim = self.zeroInt
             name = f"mean_{self.nm}_out"
             self.nm += 1
-            if opsVersion == 18:
+            if opsVersion >= 18:
                 
                 node = onnx.helper.make_node(
                     'ReduceMean',
@@ -422,7 +422,7 @@ class RWKVOnnxOps():
             
 
         
-        self.groupnorm = groupnorm if opsVersion < 18 else groupnorm18
+        self.groupnorm = groupnorm if opsVersion != 18 else groupnorm18
 
         def getIndex(x, y):
             name = f"getIndex_{self.nm}_out"

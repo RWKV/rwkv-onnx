@@ -47,14 +47,15 @@ class RWKV {
         
 
     public:
-        RWKV(std::string model_path) {
+        RWKV(std::string model_path, int intraopthreads = 6, int interopthreads = 6, GraphOptimizationLevel graphoptimizationlevel = GraphOptimizationLevel::ORT_ENABLE_BASIC) {
 
             // Set up options for the session
              
-            sessionOptions.SetIntraOpNumThreads(2);
-            sessionOptions.SetInterOpNumThreads(16);
-            sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
-
+            sessionOptions.SetIntraOpNumThreads(intraopthreads);
+            sessionOptions.SetInterOpNumThreads(interopthreads);
+            sessionOptions.SetGraphOptimizationLevel(graphoptimizationlevel);
+            sessionOptions.SetExecutionMode(ExecutionMode::ORT_PARALLEL);
+            
             // Create a session with the model file
             session = new Ort::Session(env, model_path.c_str(), sessionOptions);
             
@@ -102,7 +103,7 @@ class RWKV {
         std::vector<std::string>* outputNames = new std::vector<std::string>();
 
         for(int i = 0; i < layers*2; i++) {
-            const auto meminfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+            const auto meminfo = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtDeviceAllocator, OrtMemTypeDefault);
             const int64_t size[2] = {batch_size, hidden_size};
             
             auto key = std::string("state" + std::to_string(i));
@@ -156,10 +157,20 @@ class RWKV {
         auto inputnames = globalState->keys;
         auto outputnames = globalState->outputkeys;
 
-        for (int i = 0; i < layers*3 + 1; i++){
+        for (int i = 0; i < layers*3; i++){
+            float* destT = globalState->state[i].GetTensorMutableData<float>();
             for (int j = 0; j < input.size(); j++) {
-                std::copy(input[j]->state[i].GetTensorMutableData<float>(), input[j]->state[i].GetTensorMutableData<float>() + input[j]->state[i].GetTensorTypeAndShapeInfo().GetElementCount(), globalState->state[i].GetTensorMutableData<float>() + j * input[j]->state[i].GetTensorTypeAndShapeInfo().GetElementCount() * sizeof(float));
+                const float* start = input[j]->state[i].GetTensorData<float>();
+                size_t size = input[j]->state[i].GetTensorTypeAndShapeInfo().GetElementCount();
+                float* dest = &destT[j * size];
+                std::memcpy(dest, start, size * sizeof(float));
             }
+        }
+
+        // copy input0
+        int32_t* destT = globalState->state[layers*3].GetTensorMutableData<int32_t>();
+        for (int j = 0; j < input.size(); j++) {
+            destT[j] = input[j]->state[layers*3].GetTensorData<int32_t>()[0];
         }
 
         const char** inputNamesChar = new const char*[inputnames.size()];
@@ -176,44 +187,54 @@ class RWKV {
         std::vector<Ort::Value> outTensors = session->Run(runOptions, inputNamesChar, globalState->state.data(), layers*3 + 1, outputNamesChar, outputnames.size());
 
         for (int i = 0; i < layers*3; i++) {
+            const float* startT = outTensors[i].GetTensorData<float>();
+
             for (int j = 0; j < input.size(); j++) {
-                std::copy(outTensors[i].GetTensorMutableData<float>() + j * input[j]->state[i].GetTensorTypeAndShapeInfo().GetElementCount(), outTensors[i].GetTensorMutableData<float>() + (j+1) * input[j]->state[i].GetTensorTypeAndShapeInfo().GetElementCount(), input[j]->state[i].GetTensorMutableData<float>());
+                size_t size = input[j]->state[i].GetTensorTypeAndShapeInfo().GetElementCount();
+                const float* start = &startT[j * size];
+                float* dest = input[j]->state[i].GetTensorMutableData<float>();
+                std::memcpy(dest, start, size * sizeof(float));
             }    
         }
         // std::vector<Ort::Value ns = std::vector<Ort::Value>(outTensors.begin(), outTensors.begin() + layers*3);
         // slice(0,-1)
 
         float* probs = outTensors[layers*3].GetTensorMutableData<float>();
-        auto samp = typical(input.size(),probs, 0.9, 0.9);
+        auto samp = typical(input.size(),probs, 1.0, 1.0);
         for(int i = 0; i < input.size(); i++) {
             input[i]->state[layers*3].GetTensorMutableData<int32_t>()[0] = samp[i];
         }
     }
 };
 
-int main() {
+int main( int argc, char* argv[] ) {
     std::cout << "Loading ONNX model..." << std::endl;
+    
+    for (int i = 0; i < argc; i++) {
+        if (i > 0){
+            if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+                std::cout << "Usage: " << argv[0] << " [model_path]" << std::endl;
+                return 0;
+            }
+        }
+    }
     // Initialize ONNX Runtime (optional, depending on the version of ONNX Runtime)
     Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ONNXRuntimeExample");
-
-    // Set up options for the session
-    Ort::SessionOptions sessionOptions;
-    sessionOptions.SetIntraOpNumThreads(6);
-    sessionOptions.SetInterOpNumThreads(6);
-    sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_BASIC);
 
 
     try {
         // Create a session with the model file
-        auto file = "RWKV_32_2560_32_17_QUInt8-pc-norr-ext.onnx";
+        auto file = "RWKV_32_2560_32_19_QUInt8-npc-norr-ext.onnx";
         RWKV* rwkv = new RWKV(file);
 
         std::cout << "Creating state..." << std::endl;
         State* state = rwkv->newState();
 
         std::cout << "Creating token..." << std::endl;
-
-        auto context = worldTokenizer.encode("### Instruction:\nWrite a story about a man going to fight in the war against the puppies, showcasing the atrocities of war.\n### Response:\n");
+        std::cout << "What would you like me to write about?" << std::endl;
+        std::string story;
+        std::getline(std::cin, story);
+        auto context = worldTokenizer.encode("### Instruction:\nWrite a story about the following topics, themes, or events\n### Input:\n"+story+"\n### Response:\n");
 
         state->state.back().GetTensorMutableData<int32_t>()[0] = context[0];
        

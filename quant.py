@@ -23,6 +23,6 @@ if "use_external_data_format(use if model larger than 2B)" in choices:
 # choose quantization type (default is QUInt8) // choose 1
 qtype = inquirer.list_input("Select quantization type", choices=[e for e in QuantType], default=QuantType.QUInt8.value )
 qtype = QuantType(qtype)
-endoption = f'_{qtype}-{"pc" if per_channel else "pc"}-{"rr" if reduce_range else "norr"}-{"ext" if use_external_data_format else "noext"}.onnx'
+endoption = f'_{qtype}-{"pc" if per_channel else "npc"}-{"rr" if reduce_range else "norr"}-{"ext" if use_external_data_format else "noext"}.onnx'
 
 quantize_dynamic(model,model.replace(".onnx",endoption), per_channel=per_channel, reduce_range=reduce_range, use_external_data_format=use_external_data_format, weight_type=qtype)

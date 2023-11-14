@@ -120,7 +120,7 @@ files = [f for f in os.listdir('.') if os.path.isfile(f)]
 files = [f for f in files if f.endswith(".onnx") or f.endswith(".ort")]
 
 from tokenizer import world as tokenizer
-STREAMS = 1
+STREAMS = 64
 model, state, state2 = initONNXFile(inquirer.list_input("Select model", choices=files), STREAMS) 
 
 prompt = STREAMS * [tokenizer.encode("### Instruction:\nPlease write a short story of a man defeating a two headed dragon###Result\n")]
