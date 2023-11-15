@@ -89,19 +89,9 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             
             td = self.time_decay[xx]
             tf = self.time_first[xx]
-            kreshaped = ops.reshape(k, self.ops.kshape)
-            vreshaped = ops.reshape(v, self.ops.vshape)
-            rreshaped = ops.reshape(r, self.ops.rshape)
 
-            kv = ops.matvec(kreshaped, vreshaped)
-            kkv = ops.multiply(kv, tf)
-            premat = ops.add(kkv, state)
-            wkv = ops.matvec(rreshaped, premat)
 
-            state2 = ops.multiply(state, td)
-            state3 = ops.add(state2, kv, state+"out")
-
-            return wkv, state3
+            return self.ops.wkv5op(k, v, r, td, tf, state)
         
 
         @ops.layerdef
@@ -208,7 +198,7 @@ def convert_model(path, dtype):
         list(filter(lambda x: "blocks" in x and "ln1.bias" in x, w.keys())))
 
 
-    ops = opslist.RWKVOnnxOps(layers,dims,dtype=dtype, opsVersion=version.get(), externalData=use_external_data.get(), splitExternalData=splitExternalData.get(), fp32inout=fp32inout.get(), quantized=mybits.get()==8, heads=headsnume)
+    ops = opslist.RWKVOnnxOps(layers,dims,dtype=dtype, opsVersion=version.get(), externalData=use_external_data.get(), splitExternalData=splitExternalData.get(), fp32inout=fp32inout.get(), quantized=mybits.get()==8, heads=headsnume, useCustomOperator=useCustomOp.get())
 
     RnnRWKV(ops,w)
 
@@ -238,6 +228,8 @@ mybits = tk.IntVar(value=32)
 use_external_data = tk.BooleanVar(value=True)
 splitExternalData = tk.BooleanVar(value=False)
 fp32inout = tk.BooleanVar(value=False)
+useCustomOp = tk.BooleanVar(value=False)
+
 # version, number either 15/17
 version = tk.IntVar(value=15)
 
@@ -254,6 +246,7 @@ bits = tk.OptionMenu(root, mybits, 16, 32)
 check_button3 = tk.Checkbutton(root, text="External Data", variable=use_external_data)
 check_button4 = tk.Checkbutton(root, text="Split External Data", variable=splitExternalData)
 check_button5 = tk.Checkbutton(root, text="Float32 inputs/outputs", variable=fp32inout)
+check_button6 = tk.Checkbutton(root, text="Use Custom Op", variable=useCustomOp)
 input_select = tk.OptionMenu(root, version, 15, 17, 19)
 
 
@@ -264,11 +257,13 @@ input_label.grid(row=0, column=0)
 input_entry.grid(row=0, column=1)
 input_button.grid(row=0, column=2)
 
+
 bits.grid(row=2, column=0)
 bitlabel.grid(row=2, column=1)
 check_button3.grid(row=2, column=2)
 check_button4.grid(row=2, column=3)
 check_button5.grid(row=2, column=4)
+check_button6.grid(row=2, column=5)
 opsetlabel.grid(row=3, column=0)
 input_select.grid(row=3, column=1)
 

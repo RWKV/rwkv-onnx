@@ -3,7 +3,7 @@ import numpy as np
 
 class RWKVOnnxOps():
 
-    def __init__(self, layers, embed, opsVersion = 15, externalData = True, splitExternalData = False,fp32inout=True, quantized = False, *args, dtype=None, heads=32, **kwargs):
+    def __init__(self, layers, embed, opsVersion = 15, externalData = True, splitExternalData = True,fp32inout=True, quantized = False, *args, dtype=None, heads=32, useCustomOperator=True, **kwargs):
         import onnx
         self.n_layers = layers
         self.n_embed = embed
@@ -14,8 +14,8 @@ class RWKVOnnxOps():
         nptype = np.float32 if dtype == onnx.TensorProto.FLOAT else np.float16 if dtype == onnx.TensorProto.FLOAT16 else np.float16 if dtype == onnx.TensorProto.BFLOAT16 else np.float32
 
         self.nm = 0
-        exportname = f"RWKV_{layers}_{embed}_{'32' if dtype == onnx.TensorProto.FLOAT else '16'}_{opsVersion}.onnx"
-        externalname = f"RWKV_{layers}_{embed}_{'32' if dtype == onnx.TensorProto.FLOAT else '16'}_{opsVersion}"
+        exportname = f"RWKV_{layers}_{embed}_{'32' if dtype == onnx.TensorProto.FLOAT else '16'}_{opsVersion}{'_custom' if useCustomOperator else ''}.onnx"
+        externalname = f"RWKV_{layers}_{embed}_{'32' if dtype == onnx.TensorProto.FLOAT else '16'}_{opsVersion}{'_custom' if useCustomOperator else ''}"
 
         # remove old files
         import os
@@ -424,6 +424,8 @@ class RWKVOnnxOps():
         
         self.groupnorm = groupnorm if opsVersion != 18 else groupnorm18
 
+        
+
         def getIndex(x, y):
             name = f"getIndex_{self.nm}_out"
             self.nm += 1
@@ -435,6 +437,37 @@ class RWKVOnnxOps():
             self.NodeList.append(node)
 
             return name
+        
+        def wkv5(k, v, r, td, tf, state):
+            name = f"getIndex_{self.nm}_out"
+            stateout = state+"out"
+            self.nm += 1
+            node = onnx.helper.make_node(
+                'wkv5',
+                inputs=[k, v, r, td, tf, state],
+                outputs=[name, stateout],
+                domain="ai.onnx.contrib"
+            )
+            self.NodeList.append(node)
+
+            return name, stateout
+        
+        def wkv5compat(k, v, r, td, tf, state):
+            kreshaped = self.reshape(k, self.kshape)
+            vreshaped = self.reshape(v, self.vshape)
+            rreshaped = self.reshape(r, self.rshape)
+
+            kv = self.matvec(kreshaped, vreshaped)
+            kkv = self.multiply(kv, tf)
+            premat = self.add(kkv, state)
+            wkv = self.matvec(rreshaped, premat)
+
+            state2 = self.multiply(state, td)
+            state3 = self.add(state2, kv, state+"out")
+
+            return wkv, state3
+        
+        self.wkv5op = wkv5 if useCustomOperator else wkv5compat
 
         self.stackEmbed = False
 
@@ -576,8 +609,7 @@ class RWKVOnnxOps():
 
             modelDef = onnx.helper.make_model(
                 graph_def, producer_name="rwkvstic",
-                
-
+                opset_imports=[onnx.helper.make_opsetid("ai.onnx.contrib", opsVersion)] if useCustomOperator else [onnx.helper.make_opsetid("ai.onnx", opsVersion)]
             )
 
 
@@ -589,11 +621,16 @@ class RWKVOnnxOps():
 
             onnx.save(modelDef, exportname)
             del modelDef
-
-            onnx.checker.check_model(exportname)
             
-            onnx.shape_inference.infer_shapes_path(exportname, check_type=True, strict_mode=True, data_prop=True)
+            if(not useCustomOperator):
+                onnx.checker.check_model(exportname)
+                onnx.shape_inference.infer_shapes_path(exportname, check_type=True, strict_mode=True, data_prop=True)
 
+                
+            else:
+                print("skipping model checking")
+
+            
             
             # run model
             print("Model saved to: ", exportname, " and is ready to be run")

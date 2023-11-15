@@ -1,9 +1,17 @@
+import onnxruntime as rt
+# register custom op for domain recursal.rwkv
+from customoptools.customop import _get_library_path
+
+
+
+
 
 def initONNXFile(path, STREAMS, useAllAvailableProviders=False):
-    import onnxruntime as rt
+    
 
     # session execution provider options
     sess_options = rt.SessionOptions()
+    sess_options.register_custom_ops_library(_get_library_path())
     # sess_options.enable_profiling = True
 
     print(rt.get_available_providers())
@@ -112,6 +120,7 @@ def npsample(ozut, temp: float = 1.0, top_p_usual: float = 0.8) -> int:
     probs = probs / np.sum(probs, axis=0)
     mout = np.random.choice(a=len(probs), p=probs)
     return mout
+# Example usage:
 
 import inquirer
 # get all .onnx files in current directory
@@ -120,10 +129,10 @@ files = [f for f in os.listdir('.') if os.path.isfile(f)]
 files = [f for f in files if f.endswith(".onnx") or f.endswith(".ort")]
 
 from tokenizer import world as tokenizer
-STREAMS = 64
+STREAMS = 1
 model, state, state2 = initONNXFile(inquirer.list_input("Select model", choices=files), STREAMS) 
 
-prompt = STREAMS * [tokenizer.encode("### Instruction:\nPlease write a short story of a man defeating a two headed dragon###Result\n")]
+prompt = STREAMS * [tokenizer.encode("### Instruction:\nPlease write a short story of a man defeating a two headed dragon\n### Result\n")]
 
 print(prompt.__len__())
 # 3b is 2.5 tokens pers econd with 32 streams = 64 + 32 = 96 tokens per second
@@ -132,10 +141,10 @@ for tokennum in tqdm.tqdm(range(prompt[0].__len__()-1)):
     logits, state, state2 = model.forward([prompt[i][tokennum] for i in range(STREAMS)],state, state2)
 
 print("Loaded prompt.")
-
+import numpy as np
 for i in range(1000):
     logits, state, state2 = model.forward([prompt[i][-1] for i in range(STREAMS)],state, state2)
-    prompt = [prompt[i]+[npsample(logits[i])] for i in range(STREAMS)]
+    prompt = [prompt[i]+[np.argmax(logits[i])] for i in range(STREAMS)]
   
     print(tokenizer.decode(prompt[0][-1:]), end="", flush=True)
 print(tokenizer.decode(prompt))
