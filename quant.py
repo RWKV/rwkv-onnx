@@ -30,5 +30,14 @@ endoption = f'_{qtype}-{"pc" if per_channel else "npc"}-{"rr" if reduce_range el
 
 # load custom op
 helper.ScrubCustomModel(model)
-quantize_dynamic(model,model.replace(".onnx",endoption), per_channel=per_channel, reduce_range=reduce_range, use_external_data_format=use_external_data_format, weight_type=qtype)
+quantize_dynamic(model,model.replace(".onnx",endoption), per_channel=per_channel, reduce_range=reduce_range, use_external_data_format=use_external_data_format, weight_type=qtype,
+                 op_types_to_quantize=[
+                     # matmul only
+                        "MatMul",
+                 ],
+                 extra_options={
+                     # gpu only
+                     
+                 }
+                 )
 helper.FixCustomModel(model.replace(".onnx",endoption))
