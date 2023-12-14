@@ -446,7 +446,10 @@ class RWKVOnnxOps():
                 'wkv5',
                 inputs=[k, v, r, td, tf, state],
                 outputs=[name, stateout],
+                **dict(
                 domain="ai.onnx.contrib"
+                ) if useCustomOperator else dict(
+                )
             )
             self.NodeList.append(node)
 
@@ -609,7 +612,11 @@ class RWKVOnnxOps():
 
             modelDef = onnx.helper.make_model(
                 graph_def, producer_name="rwkvstic",
-                opset_imports=[onnx.helper.make_opsetid("ai.onnx.contrib", opsVersion)] if useCustomOperator else [onnx.helper.make_opsetid("ai.onnx", opsVersion)]
+                **dict(
+                opset_imports=[onnx.helper.make_opsetid("ai.onnx.contrib", opsVersion)])
+                if useCustomOperator else 
+                dict(
+                )
             )
 
 

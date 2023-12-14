@@ -36,8 +36,8 @@ quantize_dynamic(model,model.replace(".onnx",endoption), per_channel=per_channel
                         "MatMul",
                  ],
                  extra_options={
-                     # gpu only
-                     
+                    
                  }
                  )
+
 helper.FixCustomModel(model.replace(".onnx",endoption))

@@ -1,8 +1,7 @@
 import onnxruntime as rt
 # register custom op for domain recursal.rwkv
-from customoptools.customop import _get_library_path
 
-
+import onnx
 
 
 
@@ -11,7 +10,20 @@ def initONNXFile(path, STREAMS, useAllAvailableProviders=False):
 
     # session execution provider options
     sess_options = rt.SessionOptions()
-    sess_options.register_custom_ops_library(_get_library_path())
+    
+    # load onnx graph and check for wkv5 nodes
+    graph = onnx.load(path,load_external_data=False).graph
+    
+    nodes = graph.node
+    # print(nodes)
+    
+    # check if wkv5 nodes are present
+    if not any([x.op_type == "wkv5" for x in nodes]):
+        print("No wkv5 nodes found in graph, skipping custom op registration")
+    else:
+    
+        from customoptools.customop import _get_library_path
+        sess_options.register_custom_ops_library(_get_library_path())
     # sess_options.enable_profiling = True
 
     print(rt.get_available_providers())
@@ -26,6 +38,8 @@ def initONNXFile(path, STREAMS, useAllAvailableProviders=False):
     sess_options.execution_mode = rt.ExecutionMode.ORT_PARALLEL
     sess_options.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_BASIC
     sess_options.add_session_config_entry("session.intra_op.allow_spinning", "1")
+    
+    
 
     sess = rt.InferenceSession(
         path, sess_options, providers=providers)
@@ -129,7 +143,7 @@ files = [f for f in os.listdir('.') if os.path.isfile(f)]
 files = [f for f in files if f.endswith(".onnx") or f.endswith(".ort")]
 
 from tokenizer import world as tokenizer
-STREAMS = 1
+STREAMS = 8
 model, state, state2 = initONNXFile(inquirer.list_input("Select model", choices=files), STREAMS) 
 
 prompt = STREAMS * [tokenizer.encode("### Instruction:\nPlease write a short story of a man defeating a two headed dragon\n### Result\n")]
@@ -146,5 +160,5 @@ for i in range(1000):
     logits, state, state2 = model.forward([prompt[i][-1] for i in range(STREAMS)],state, state2)
     prompt = [prompt[i]+[np.argmax(logits[i])] for i in range(STREAMS)]
   
-    print(tokenizer.decode(prompt[0][-1:]), end="", flush=True)
+    print(tokenizer.decode(prompt[2][-1:]), end="", flush=True)
 print(tokenizer.decode(prompt))
