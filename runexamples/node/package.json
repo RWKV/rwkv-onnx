@@ -1,0 +1,17 @@
+{
+  "name": "node-rwkv",
+  "version": "1.0.0",
+  "description": "A rwkv node runner",
+  "main": "index.js",
+  "author": "Harrison vanderbyl",
+  "license": "MIT",
+  "dependencies": {
+    "fs": "^0.0.1-security",
+    "onnxruntime-common": "^1.16.2",
+    "onnxruntime-node": "^1.16.2",
+    "ts-node": "^10.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.9.0"
+  }
+}

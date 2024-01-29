@@ -3,7 +3,7 @@ import numpy as np
 
 class RWKVOnnxOps():
 
-    def __init__(self, layers, embed, opsVersion = 15, externalData = True, splitExternalData = False,fp32inout=True, quantized = False, *args, dtype=None, heads=32, **kwargs):
+    def __init__(self, layers, embed, opsVersion = 15, externalData = True, splitExternalData = True,fp32inout=True, quantized = False, *args, dtype=None, heads=32, useCustomOperator=True, **kwargs):
         import onnx
         self.n_layers = layers
         self.n_embed = embed
@@ -14,8 +14,8 @@ class RWKVOnnxOps():
         nptype = np.float32 if dtype == onnx.TensorProto.FLOAT else np.float16 if dtype == onnx.TensorProto.FLOAT16 else np.float16 if dtype == onnx.TensorProto.BFLOAT16 else np.float32
 
         self.nm = 0
-        exportname = f"RWKV_{layers}_{embed}_{'32' if dtype == onnx.TensorProto.FLOAT else '16'}_{opsVersion}.onnx"
-        externalname = f"RWKV_{layers}_{embed}_{'32' if dtype == onnx.TensorProto.FLOAT else '16'}_{opsVersion}"
+        exportname = f"RWKV_{layers}_{embed}_{'32' if dtype == onnx.TensorProto.FLOAT else '16'}_{opsVersion}{'_custom' if useCustomOperator else ''}.onnx"
+        externalname = f"RWKV_{layers}_{embed}_{'32' if dtype == onnx.TensorProto.FLOAT else '16'}_{opsVersion}{'_custom' if useCustomOperator else ''}"
 
         # remove old files
         import os
@@ -37,7 +37,7 @@ class RWKVOnnxOps():
             if isinstance(x, list):
                 xx = np.array(x).astype(npdtype)
             else:
-                xx = x.squeeze().float().cpu().numpy()
+                xx = x.float().cpu().numpy()
                 # convert to float32
                 xx = xx.astype(npdtype)
             rrx = onnx.helper.make_tensor(
@@ -150,7 +150,7 @@ class RWKVOnnxOps():
                 dim = self.zeroInt
             name = f"mean_{self.nm}_out"
             self.nm += 1
-            if opsVersion == 18:
+            if opsVersion >= 18:
                 
                 node = onnx.helper.make_node(
                     'ReduceMean',
@@ -177,6 +177,10 @@ class RWKVOnnxOps():
         def meanvarnorm(x, dim=None):
             if dim == None:
                 dim = self.zeroInt
+
+            if dtype == onnx.TensorProto.FLOAT16:
+                x = convertToFloat32(x)
+                
             name = f"meanvarnorm_{self.nm}_out"
             self.nm += 1
             node = onnx.helper.make_node(
@@ -184,10 +188,11 @@ class RWKVOnnxOps():
                 inputs=[x],
                 outputs=[name],
                 axes=dim,
-                keepdims=1
+                
             )
             self.NodeList.append(node)
-
+            if dtype == onnx.TensorProto.FLOAT16:
+                name = convertToFloat16(name)
             return name
         
         self.meanvarnorm = meanvarnorm
@@ -227,7 +232,6 @@ class RWKVOnnxOps():
 
         def matvec(x, y, outputfp32 = False):
             name = f"matvec_{self.nm}_out"
-            oname = f"matvec_g_{self.nm}_out"
             self.nm += 1
             node = onnx.helper.make_node(
                 'MatMul',
@@ -261,11 +265,12 @@ class RWKVOnnxOps():
 
         self.prod = prod
 
-        def mul(x, y):
+        def mul(x, y, opname=""):
             name = f"mul_{self.nm}_out"
             self.nm += 1
             node = onnx.helper.make_node(
                 'Mul',
+                name=opname,
                 inputs=[x, y],
                 outputs=[name]
             )
@@ -275,21 +280,11 @@ class RWKVOnnxOps():
 
         self.multiply = mul
 
-        def squeeze(x):
-            name = f"squeeze_{self.nm}_out"
-            self.nm += 1
-            node = onnx.helper.make_node(
-                'Squeeze',
-                inputs=[x],
-                outputs=[name]
-            )
-            self.NodeList.append(node)
 
-            return name
 
-        def add(x, y):
+        def add(x, y, newName = None):
 
-            name = f"add_{self.nm}_out"
+            name = f"add_{self.nm}_out" if newName == None else newName
             self.nm += 1
             node = onnx.helper.make_node(
                 'Add',
@@ -375,8 +370,8 @@ class RWKVOnnxOps():
 
         self.divide = divide
 
-        def layernorm17(x, w, b):
-            name = f"layernorm_{self.nm}_out"
+        def layernorm17(x, w, b, newName = None):
+            name = f"layernorm_{self.nm}_out" if newName == None else newName
             self.nm += 1
             node = onnx.helper.make_node(
                 'LayerNormalization',
@@ -388,21 +383,31 @@ class RWKVOnnxOps():
             return name 
         # ort 15 does not support layernorm
 
-        def layernorm(x, w, b):
-            xee2 = self.subtract(x,self.mean(x))
-            x2 = self.add(self.sqrt(self.add(self.mean(self.multiply(xee2,xee2)), self.margins16)), self.margins16)
-            return self.add(self.multiply(w, self.divide(xee2, x2)), b)
+        def layernorm(x, w, b, newName = None):
+            # xee2 = self.subtract(x,self.mean(x))
+            # x2 = self.add(self.sqrt(self.add(self.mean(self.multiply(xee2,xee2)), self.margins16)), self.margins16)
+            # xo = self.divide(xee2, x2)
+
+            xo = self.meanvarnorm(x)
+            
+            return self.add(self.multiply(w, xo), b, newName)
 
 
-        self.layernorm = layernorm if opsVersion != 17 else layernorm17
+        self.layernorm = layernorm if opsVersion < 17 else layernorm17
 
         def groupnorm(x, w, b):
-            x = self.reshape(x, self.premshape)
-            xee2 = self.subtract(x,self.mean(x,self.oneInt))
-            x2 = self.add(self.sqrt(self.add(self.mean(self.multiply(xee2,xee2),self.oneInt), self.margins32)), self.margins32)
-            return self.add(self.multiply(w, self.divide(xee2, x2)), b)
+            # xee2 = self.subtract(x,self.mean(x,self.oneInt))
+            # x2 = self.add(self.sqrt(self.add(self.mean(self.multiply(xee2,xee2),self.oneInt), self.margins32)), self.margins32)
+            # lnx = self.divide(xee2, x2)
+            lnx = self.meanvarnorm(x, self.oneInt)
+            xo = self.add(self.multiply(w, lnx), b)
+            xo = self.reshape(xo, self.normalshape)
+            return xo
         
         def groupnorm18(x, w, b):
+
+            x = self.reshape(x, self.normshape)
+            
             name = f"groupnorm_{self.nm}_out"
             self.nm += 1
             node = onnx.helper.make_node(
@@ -412,11 +417,14 @@ class RWKVOnnxOps():
                 num_groups=heads
             )
             self.NodeList.append(node)
+            name = self.reshape(name, self.normalshape)
             return name
             
 
         
-        self.groupnorm = groupnorm
+        self.groupnorm = groupnorm if opsVersion != 18 else groupnorm18
+
+        
 
         def getIndex(x, y):
             name = f"getIndex_{self.nm}_out"
@@ -428,7 +436,41 @@ class RWKVOnnxOps():
             )
             self.NodeList.append(node)
 
-            return squeeze(name)
+            return name
+        
+        def wkv5(k, v, r, td, tf, state):
+            name = f"getIndex_{self.nm}_out"
+            stateout = state+"out"
+            self.nm += 1
+            node = onnx.helper.make_node(
+                'wkv5',
+                inputs=[k, v, r, td, tf, state],
+                outputs=[name, stateout],
+                **dict(
+                domain="ai.onnx.contrib"
+                ) if useCustomOperator else dict(
+                )
+            )
+            self.NodeList.append(node)
+
+            return name, stateout
+        
+        def wkv5compat(k, v, r, td, tf, state):
+            kreshaped = self.reshape(k, self.kshape)
+            vreshaped = self.reshape(v, self.vshape)
+            rreshaped = self.reshape(r, self.rshape)
+
+            kv = self.matvec(kreshaped, vreshaped)
+            kkv = self.multiply(kv, tf)
+            premat = self.add(kkv, state)
+            wkv = self.matvec(rreshaped, premat)
+
+            state2 = self.multiply(state, td)
+            state3 = self.add(state2, kv, state+"out")
+
+            return wkv, state3
+        
+        self.wkv5op = wkv5 if useCustomOperator else wkv5compat
 
         self.stackEmbed = False
 
@@ -478,14 +520,18 @@ class RWKVOnnxOps():
         
         self.reshape = reshape
 
-        self.kshape = initIntTensor([heads, embed//heads, 1])
-        self.vshape = initIntTensor([heads, 1, embed//heads])
-        self.rshape = initIntTensor([heads, 1, embed//heads])
-        self.normshape = initIntTensor([heads * embed//heads])
-        self.zeroInt = initIntTensor([0]) if opsVersion == 18 else [0]
-        self.oneInt = initIntTensor([1]) if opsVersion == 18 else [1]
-        self.eight = initTensor([8.0])
-        self.premshape = initIntTensor([heads,  embed//heads])
+        self.kshape = initIntTensor([-1,heads, embed//heads, 1])
+        self.vshape = initIntTensor([-1,heads, 1, embed//heads])
+        self.rshape = initIntTensor([-1, heads, 1, embed//heads])
+        self.postwkvop = initIntTensor([-1, heads, embed//heads, embed//heads])
+        self.prematshape = initIntTensor([-1, embed//heads, embed//heads])
+        self.normshape = initIntTensor([-1, heads, embed//heads])
+        self.normalshape = initIntTensor([-1, embed])
+        self.pregnshape = initIntTensor([-1, heads, embed//heads])
+        self.zeroInt = initIntTensor([1]) if opsVersion == 18 else [1]
+        self.oneInt = initIntTensor([3]) if opsVersion == 18 else [3]
+        self.eight = initTensor([[8.0]])
+        self.premshape = initIntTensor([-1, heads,  embed//heads])
 
         def maximum(x, y):
             name = f"maximum_{self.nm}_out"
@@ -504,12 +550,12 @@ class RWKVOnnxOps():
         self.getIndex = getIndex
 
         # convert to float32
-        self.emptyState = np.array((([[0.00]*embed, [0.00]*embed]))*layers)
+        self.emptyState = np.array((([[[0.00]*embed]*1, [[0.00]*embed]*1]))*layers)
         self.emptyState = np.array(self.emptyState)
 
         # emptwkv state is n_layers,32,64,64
         hs = embed//heads
-        self.emptyWkvState = np.array(([[[[0.0]*hs]*hs]*heads]*layers))
+        self.emptyWkvState = np.array(([1*[[[[0.0]*hs]*hs]*heads]]*layers))
 
         if dtype == onnx.TensorProto.FLOAT16 and not fp32inout:
             self.emptyState = self.emptyState.astype(np.float16)
@@ -521,14 +567,14 @@ class RWKVOnnxOps():
             import onnx
             inputtensor = onnx.helper.make_tensor_value_info("input0",
                                                              onnx.TensorProto.INT32,
-                                                             [1]), "input0"
+                                                             [-1]), "input0"
 
-            emptyState = list(map(lambda x: (onnx.helper.make_tensor_value_info("instate"+str(x),
+            emptyState = list(map(lambda x: (onnx.helper.make_tensor_value_info("state"+str(x),
                                                                                 onnx.TensorProto.FLOAT if fp32inout else dtype,
-                                                                                [embed]), "instate"+str(x)), range((2)*layers)))
-            emptystate2 = list(map(lambda x: (onnx.helper.make_tensor_value_info("instatewkv"+str(x),
+                                                                                [-1,embed]), "state"+str(x)), range((2)*layers)))
+            emptystate2 = list(map(lambda x: (onnx.helper.make_tensor_value_info("statewkv"+str(x),
                                                                                     onnx.TensorProto.FLOAT if fp32inout else dtype,
-                                                                                    [heads, hs, hs]), "instatewkv"+str(x)), range(layers)))
+                                                                                    [-1,heads, hs, hs]), "statewkv"+str(x)), range(layers)))
             outs = x.forward(
                 inputtensor[1], list(map(lambda x: x[1], emptyState)), list(map(lambda x: x[1], emptystate2)))
             print(self.TensorList.__len__())
@@ -536,13 +582,13 @@ class RWKVOnnxOps():
             print(outs)
             logits = onnx.helper.make_tensor_value_info(outs[0],
                                                         onnx.TensorProto.FLOAT if fp32inout else dtype,
-                                                        [65536])
+                                                        [-1,65536])
             state = list(map(lambda x: onnx.helper.make_tensor_value_info(x,
                                                                           onnx.TensorProto.FLOAT if fp32inout else dtype,
-                                                                          [embed]), outs[1]))
+                                                                          [-1, embed]), outs[1]))
             state2 = list(map(lambda x: onnx.helper.make_tensor_value_info(x,
                                                                             onnx.TensorProto.FLOAT if fp32inout else dtype,
-                                                                            [heads, hs, hs]), outs[2]))
+                                                                            [-1, heads, hs, hs]), outs[2]))
 
             # Create the graph (GraphProto)
             graph_def = onnx.helper.make_graph(
@@ -566,8 +612,11 @@ class RWKVOnnxOps():
 
             modelDef = onnx.helper.make_model(
                 graph_def, producer_name="rwkvstic",
-                
-
+                **dict(
+                opset_imports=[onnx.helper.make_opsetid("ai.onnx.contrib", opsVersion)])
+                if useCustomOperator else 
+                dict(
+                )
             )
 
 
@@ -579,25 +628,17 @@ class RWKVOnnxOps():
 
             onnx.save(modelDef, exportname)
             del modelDef
+            
+            if(not useCustomOperator):
+                onnx.checker.check_model(exportname)
+                onnx.shape_inference.infer_shapes_path(exportname, check_type=True, strict_mode=True, data_prop=True)
 
-            onnx.checker.check_model(exportname)
-            onnx.shape_inference.infer_shapes_path(exportname, check_type=True, strict_mode=True)
+                
+            else:
+                print("skipping model checking")
 
-            if quantized:
-                import onnx
-                from onnxruntime.quantization import quantize_dynamic, QuantType
-                model_fp32 = exportname
-                model_quant = "quantized_"+exportname
-                try:
-                    quantized_model = quantize_dynamic(model_fp32, model_quant, per_channel=True, reduce_range=True, use_external_data_format=True)
-                    import os
-                    os.remove(model_fp32)
-                    os.rename(model_quant, model_fp32)
-                    os.remove(externalname+".bin")
-                except:
-                    print("Quantization failed, chase this line and update the above code to use external data(if you are using a model more than 1b5)")
-                    exit()
-
+            
+            
             # run model
             print("Model saved to: ", exportname, " and is ready to be run")
             print("Data type: ", dtype)

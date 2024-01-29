@@ -12,36 +12,36 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             self.ops = ops
             self.headsnume, self.headsize = w[f"blocks.0.att.time_decay"].shape
            
-            self.postprocess0 = ops.initTensor((w["ln_out.weight"]))
-            self.postprocess1 = ops.initTensor((w["ln_out.bias"]))
-            self.postprocess2 = ops.initTensor((w["head.weight"]))
+            self.postprocess0 = ops.initTensor((w["ln_out.weight"].reshape(1,-1)))
+            self.postprocess1 = ops.initTensor((w["ln_out.bias"].reshape(1,-1)))
+            self.postprocess2 = ops.initTensor((w["head.weight"]).t())
             self.emb = ops.initTensor(w["emb.weight"])
-            self.emb1 = ops.initTensor(w["blocks.0.ln0.weight"])
-            self.emb2 = ops.initTensor(w["blocks.0.ln0.bias"])
+            self.emb1 = ops.initTensor(w["blocks.0.ln0.weight"].reshape(1,-1))
+            self.emb2 = ops.initTensor(w["blocks.0.ln0.bias"].reshape(1,-1))
             self.ln1w = (ops.stack(
-                [w[f"blocks.{x}.ln1.weight"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.ln1.weight"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.ln1b = (ops.stack(
-                [w[f"blocks.{x}.ln1.bias"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.ln1.bias"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.ln2w = (ops.stack(
-                [w[f"blocks.{x}.ln2.weight"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.ln2.weight"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.ln2b = (ops.stack(
-                [w[f"blocks.{x}.ln2.bias"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.ln2.bias"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.lnxw = (ops.stack(
-                [w[f"blocks.{x}.att.ln_x.weight"].reshape(self.headsnume,-1) for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.ln_x.weight"].reshape(1,self.headsnume,1,-1) for x in range(ops.n_layers)]))
             self.lnxb = (ops.stack(
-                [w[f"blocks.{x}.att.ln_x.bias"].reshape(self.headsnume,-1)  for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.ln_x.bias"].reshape(1,self.headsnume,1,-1)  for x in range(ops.n_layers)]))
             self.time_decay = (ops.stack([
-                w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(self.headsnume,-1,1).repeat(1,1,self.headsize) for x in range(ops.n_layers)], True))
+                w[f"blocks.{x}.att.time_decay"].double().exp().neg().exp().reshape(1,self.headsnume,-1,1) for x in range(ops.n_layers)]))
             self.time_first = (ops.stack([
-                w[f"blocks.{x}.att.time_faaaa"].reshape(self.headsnume,-1,1).repeat(1,1,self.headsize)  for x in range(ops.n_layers)],True))
+                w[f"blocks.{x}.att.time_faaaa"].reshape(1,self.headsnume,-1,1)  for x in range(ops.n_layers)]))
             self.kktk = (ops.stack(
-                [w[f"blocks.{x}.att.time_mix_k"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.time_mix_k"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.vvtv = (ops.stack(
-                [w[f"blocks.{x}.att.time_mix_v"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.time_mix_v"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.rrtr = (ops.stack(
-                [w[f"blocks.{x}.att.time_mix_r"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.time_mix_r"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.ggtg = (ops.stack(
-                [w[f"blocks.{x}.att.time_mix_g"] for x in range(ops.n_layers)]))
+                [w[f"blocks.{x}.att.time_mix_g"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.key = (ops.stack(
                 [w[f"blocks.{x}.att.key.weight"].t() for x in range(ops.n_layers)], exname="_key"))
             self.value = (ops.stack(
@@ -53,9 +53,9 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             self.outputvv = (ops.stack([
                 w[f"blocks.{x}.att.output.weight"].t() for x in range(ops.n_layers)], exname="_outputvv"))
             self.time_mix_k_ffn = (ops.stack([
-                w[f"blocks.{x}.ffn.time_mix_k"] for x in range(ops.n_layers)]))
+                w[f"blocks.{x}.ffn.time_mix_k"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.time_mix_r_ffn = (ops.stack([
-                w[f"blocks.{x}.ffn.time_mix_r"] for x in range(ops.n_layers)]))
+                w[f"blocks.{x}.ffn.time_mix_r"].reshape(1,-1) for x in range(ops.n_layers)]))
             self.key_ffn = (ops.stack(
                 [w[f"blocks.{x}.ffn.key.weight"].t() for x in range(ops.n_layers)], exname="_key_ffn"))
             self.receptance_ffn = (ops.stack([
@@ -89,32 +89,23 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
             
             td = self.time_decay[xx]
             tf = self.time_first[xx]
-            kreshaped = ops.reshape(k, self.ops.kshape)
-            vreshaped = ops.reshape(v, self.ops.vshape)
-            rreshaped = ops.reshape(r, self.ops.rshape)
 
-            kv = ops.matvec(kreshaped, vreshaped)
-            kkv = ops.multiply(kv, tf)
-            premat = ops.add(kkv, state)
-            wkv = ops.matvec(rreshaped, premat)
-            state = ops.multiply(state, td)
-            state = ops.add(state, kv)
 
-            return wkv, state
+            return self.ops.wkv5op(k, v, r, td, tf, state)
         
 
         @ops.layerdef
         def doLayer(self, x, statea, stateb, statec, xx):
 
-            xy = ops.layernorm(x, self.ln1w[xx], self.ln1b[xx])
+            xy = ops.layernorm(x, self.ln1w[xx], self.ln1b[xx], statea+"out")
 
             k = ops.matvec(
-                 ops.lerp(statea, xy, self.kktk[xx]),self.key[xx], True)
+                 ops.lerp(statea, xy, self.kktk[xx]),self.key[xx])
 
             v = ops.matvec(ops.lerp(
-                statea, xy, self.vvtv[xx]),self.value[xx], True)
+                statea, xy, self.vvtv[xx]),self.value[xx])
             rr = ops.matvec(ops.lerp(statea, xy, self.rrtr[xx]),
-                self.receptance[xx], True)
+                self.receptance[xx])
             
             g = ops.matvec(
                  ops.lerp(statea, xy, self.ggtg[xx]),self.gate[xx])
@@ -130,14 +121,15 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
         # x = self.output(x * g)
             lnx = ops.groupnorm(wkv8, self.lnxw[xx], self.lnxb[xx])
 
-            lnxo = ops.reshape(lnx, self.ops.normshape)
             
-            mvvo = ops.matvec(ops.multiply(gg, lnxo),
+            gm = ops.multiply(gg, lnx, f"gateXgroupnorm-Layer{xx}")
+           
+            mvvo = ops.matvec(gm,
                 self.outputvv[xx])
             
             mvv = ops.add(mvvo, x)
 
-            ddd = ops.layernorm(mvv, self.ln2w[xx], self.ln2b[xx])
+            ddd = ops.layernorm(mvv, self.ln2w[xx], self.ln2b[xx], stateb+"out")
 
             kml = ops.lerp(
                 stateb, ddd, self.time_mix_k_ffn[xx])
@@ -181,8 +173,8 @@ def RnnRWKV(ops:opslist.RWKVOnnxOps, *args):
                     x, ops.convertToFloat16(statea[i]), ops.convertToFloat16(stateb[i]),ops.convertToFloat32(statec[i]), i)
                 ot = ot + ([ops.convertToFloat32(aaa),ops.convertToFloat32(bbb)])   
                 ot2 = ot2 + [ops.convertToFloat32(ccc)]
-            x = ops.matvec(self.postprocess2,ops.layernorm(x, self.postprocess0,
-                                                            self.postprocess1))
+            x = ops.matvec(ops.layernorm(x, self.postprocess0,
+                                                            self.postprocess1),self.postprocess2)
 
             return ops.convertToFloat32(x), ot, ot2
 
@@ -196,9 +188,9 @@ import torch
 def convert_model(path, dtype):
     #delete all .onnx and .bin files
     import os
-    for file in os.listdir("."):
-        if file.endswith(".onnx") or file.endswith(".bin"):
-            os.remove(file)
+    # for file in os.listdir("."):
+    #     if file.endswith(".onnx") or file.endswith(".bin"):
+    #         os.remove(file)
     w = torch.load(path, map_location="cpu")
     dims = len(w["blocks.0.att.key.weight"])
     headsnume, headsize = w[f"blocks.0.att.time_decay"].shape
@@ -206,7 +198,7 @@ def convert_model(path, dtype):
         list(filter(lambda x: "blocks" in x and "ln1.bias" in x, w.keys())))
 
 
-    ops = opslist.RWKVOnnxOps(layers,dims,dtype=dtype, opsVersion=version.get(), externalData=use_external_data.get(), splitExternalData=splitExternalData.get(), fp32inout=fp32inout.get(), quantized=mybits.get()==8, heads=headsnume)
+    ops = opslist.RWKVOnnxOps(layers,dims,dtype=dtype, opsVersion=version.get(), externalData=use_external_data.get(), splitExternalData=splitExternalData.get(), fp32inout=fp32inout.get(), quantized=mybits.get()==8, heads=headsnume, useCustomOperator=useCustomOp.get())
 
     RnnRWKV(ops,w)
 
@@ -232,10 +224,12 @@ def convert():
 
 # Define the variables
 input_path = tk.StringVar()
-mybits = tk.IntVar(value=8)
+mybits = tk.IntVar(value=32)
 use_external_data = tk.BooleanVar(value=True)
 splitExternalData = tk.BooleanVar(value=False)
 fp32inout = tk.BooleanVar(value=False)
+useCustomOp = tk.BooleanVar(value=False)
+
 # version, number either 15/17
 version = tk.IntVar(value=15)
 
@@ -248,11 +242,12 @@ input_button = tk.Button(root, text="Browse...", command=choose_input_file)
 
 
 
-bits = tk.OptionMenu(root, mybits, 8, 16, 32)
+bits = tk.OptionMenu(root, mybits, 16, 32)
 check_button3 = tk.Checkbutton(root, text="External Data", variable=use_external_data)
 check_button4 = tk.Checkbutton(root, text="Split External Data", variable=splitExternalData)
 check_button5 = tk.Checkbutton(root, text="Float32 inputs/outputs", variable=fp32inout)
-input_select = tk.OptionMenu(root, version, 15, 17, 18)
+check_button6 = tk.Checkbutton(root, text="Use Custom Op", variable=useCustomOp)
+input_select = tk.OptionMenu(root, version, 15, 17, 19)
 
 
 convert_button = tk.Button(root, text="Convert", command=convert)
@@ -262,11 +257,13 @@ input_label.grid(row=0, column=0)
 input_entry.grid(row=0, column=1)
 input_button.grid(row=0, column=2)
 
+
 bits.grid(row=2, column=0)
 bitlabel.grid(row=2, column=1)
 check_button3.grid(row=2, column=2)
 check_button4.grid(row=2, column=3)
 check_button5.grid(row=2, column=4)
+check_button6.grid(row=2, column=5)
 opsetlabel.grid(row=3, column=0)
 input_select.grid(row=3, column=1)
 
